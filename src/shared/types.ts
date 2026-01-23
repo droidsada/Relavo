@@ -17,7 +17,8 @@ export type MessageType =
   | 'PROFILE_DATA_RESPONSE'
   | 'GENERATE_MESSAGE'
   | 'GENERATE_MESSAGE_RESPONSE'
-  | 'CHECK_LINKEDIN_TAB';
+  | 'CHECK_LINKEDIN_TAB'
+  | 'TOGGLE_WIDGET';
 
 export interface BaseMessage {
   type: MessageType;
@@ -50,9 +51,14 @@ export interface CheckLinkedInTabMessage extends BaseMessage {
   type: 'CHECK_LINKEDIN_TAB';
 }
 
+export interface ToggleWidgetMessage extends BaseMessage {
+  type: 'TOGGLE_WIDGET';
+}
+
 export type ExtensionMessage =
   | GetProfileDataMessage
   | ProfileDataResponseMessage
   | GenerateMessageRequest
   | GenerateMessageResponse
-  | CheckLinkedInTabMessage;
+  | CheckLinkedInTabMessage
+  | ToggleWidgetMessage;

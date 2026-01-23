@@ -4,32 +4,450 @@ import type {
   ProfileDataResponseMessage,
 } from '../shared/types';
 
-chrome.runtime.onMessage.addListener(
-  (
-    message: ExtensionMessage,
-    _sender: chrome.runtime.MessageSender,
-    sendResponse: (response: ProfileDataResponseMessage) => void
-  ) => {
-    if (message.type === 'GET_PROFILE_DATA') {
-      const profileData = extractProfileData();
-      sendResponse({
-        type: 'PROFILE_DATA_RESPONSE',
-        data: profileData,
-      });
-    }
-    return false;
+// Inject styles for the widget
+const styles = `
+  #relavo-widget {
+    position: fixed;
+    top: 100px;
+    right: 20px;
+    width: 350px;
+    min-width: 280px;
+    min-height: 200px;
+    background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 100%);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    z-index: 9999;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    resize: both;
   }
-);
+
+  #relavo-widget * {
+    box-sizing: border-box;
+  }
+
+  #relavo-header {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    padding: 12px 16px;
+    cursor: move;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+  }
+
+  #relavo-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  #relavo-header-buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  #relavo-header button {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: background 0.2s;
+  }
+
+  #relavo-header button:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  #relavo-content {
+    padding: 16px;
+    max-height: calc(100% - 48px);
+    overflow-y: auto;
+  }
+
+  #relavo-profile {
+    background: white;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    font-size: 12px;
+    border: 1px solid #e2e8f0;
+  }
+
+  #relavo-profile h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    color: #1e293b;
+  }
+
+  #relavo-profile .profile-item {
+    margin-bottom: 6px;
+    color: #475569;
+    line-height: 1.4;
+  }
+
+  #relavo-profile .profile-label {
+    font-weight: 600;
+    color: #334155;
+  }
+
+  #relavo-profile .experience-list {
+    margin: 4px 0 0 12px;
+    padding: 0;
+    list-style: none;
+  }
+
+  #relavo-profile .experience-list li {
+    margin-bottom: 2px;
+    color: #64748b;
+  }
+
+  #relavo-profile .experience-list li::before {
+    content: "•";
+    margin-right: 6px;
+    color: #94a3b8;
+  }
+
+  #relavo-generate-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  #relavo-generate-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+
+  #relavo-generate-btn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+  }
+
+  #relavo-message-output {
+    margin-top: 12px;
+    background: white;
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    display: none;
+  }
+
+  #relavo-message-output.visible {
+    display: block;
+  }
+
+  #relavo-message-output .message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  #relavo-message-output h4 {
+    margin: 0;
+    font-size: 13px;
+    color: #1e293b;
+  }
+
+  #relavo-copy-btn {
+    background: #10b981;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: background 0.2s;
+  }
+
+  #relavo-copy-btn:hover {
+    background: #059669;
+  }
+
+  #relavo-message-text {
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 12px;
+    color: #334155;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    border: 1px solid #e2e8f0;
+  }
+
+  #relavo-error {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #dc2626;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  #relavo-error.visible {
+    display: block;
+  }
+
+  #relavo-tip {
+    margin-top: 8px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1d4ed8;
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 11px;
+  }
+
+  .relavo-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: relavo-spin 0.8s linear infinite;
+  }
+
+  @keyframes relavo-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  #relavo-widget.minimized {
+    width: auto !important;
+    height: auto !important;
+    min-width: auto;
+    min-height: auto;
+    resize: none;
+  }
+
+  #relavo-widget.minimized #relavo-content {
+    display: none;
+  }
+`;
+
+let widget: HTMLElement | null = null;
+let isDragging = false;
+let dragOffset = { x: 0, y: 0 };
+let profileData: ProfileData | null = null;
+
+function injectStyles() {
+  const styleElement = document.createElement('style');
+  styleElement.textContent = styles;
+  document.head.appendChild(styleElement);
+}
+
+function createWidget() {
+  if (widget) return;
+
+  widget = document.createElement('div');
+  widget.id = 'relavo-widget';
+  widget.innerHTML = `
+    <div id="relavo-header">
+      <h3>Relavo</h3>
+      <div id="relavo-header-buttons">
+        <button id="relavo-refresh" title="Refresh profile data">↻</button>
+        <button id="relavo-minimize" title="Minimize">−</button>
+        <button id="relavo-close" title="Close">×</button>
+      </div>
+    </div>
+    <div id="relavo-content">
+      <div id="relavo-profile">
+        <h4>Profile Data</h4>
+        <div id="relavo-profile-content">Loading...</div>
+      </div>
+      <button id="relavo-generate-btn">Generate Message</button>
+      <div id="relavo-error"></div>
+      <div id="relavo-message-output">
+        <div class="message-header">
+          <h4>Your Message</h4>
+          <button id="relavo-copy-btn">
+            <span>📋</span> Copy
+          </button>
+        </div>
+        <div id="relavo-message-text"></div>
+        <div id="relavo-tip">Tip: Review and personalize before sending!</div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(widget);
+  setupEventListeners();
+  loadProfileData();
+}
+
+function setupEventListeners() {
+  if (!widget) return;
+
+  const header = widget.querySelector('#relavo-header') as HTMLElement;
+  const closeBtn = widget.querySelector('#relavo-close') as HTMLElement;
+  const minimizeBtn = widget.querySelector('#relavo-minimize') as HTMLElement;
+  const refreshBtn = widget.querySelector('#relavo-refresh') as HTMLElement;
+  const generateBtn = widget.querySelector('#relavo-generate-btn') as HTMLElement;
+  const copyBtn = widget.querySelector('#relavo-copy-btn') as HTMLElement;
+
+  // Dragging
+  header.addEventListener('mousedown', (e) => {
+    if ((e.target as HTMLElement).tagName === 'BUTTON') return;
+    isDragging = true;
+    const rect = widget!.getBoundingClientRect();
+    dragOffset = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+    widget!.style.transition = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging || !widget) return;
+    const x = e.clientX - dragOffset.x;
+    const y = e.clientY - dragOffset.y;
+    widget.style.left = `${Math.max(0, Math.min(x, window.innerWidth - widget.offsetWidth))}px`;
+    widget.style.top = `${Math.max(0, Math.min(y, window.innerHeight - widget.offsetHeight))}px`;
+    widget.style.right = 'auto';
+  });
+
+  document.addEventListener('mouseup', () => {
+    isDragging = false;
+    if (widget) widget.style.transition = '';
+  });
+
+  // Close
+  closeBtn.addEventListener('click', () => {
+    widget?.remove();
+    widget = null;
+  });
+
+  // Minimize
+  minimizeBtn.addEventListener('click', () => {
+    widget?.classList.toggle('minimized');
+    minimizeBtn.textContent = widget?.classList.contains('minimized') ? '+' : '−';
+  });
+
+  // Refresh
+  refreshBtn.addEventListener('click', loadProfileData);
+
+  // Generate
+  generateBtn.addEventListener('click', generateMessage);
+
+  // Copy
+  copyBtn.addEventListener('click', copyMessage);
+}
+
+function loadProfileData() {
+  profileData = extractProfileData();
+  updateProfileDisplay();
+}
+
+function updateProfileDisplay() {
+  const content = widget?.querySelector('#relavo-profile-content');
+  if (!content) return;
+
+  if (!profileData) {
+    content.innerHTML = '<p style="color: #dc2626;">Could not extract profile data. Make sure you\'re on a LinkedIn profile page.</p>';
+    return;
+  }
+
+  const experienceHtml = profileData.experience.length > 0
+    ? `<ul class="experience-list">${profileData.experience.slice(0, 3).map(exp => `<li>${exp}</li>`).join('')}</ul>`
+    : '<span style="color: #94a3b8;">Not available</span>';
+
+  content.innerHTML = `
+    <div class="profile-item"><span class="profile-label">Name:</span> ${profileData.name}</div>
+    ${profileData.headline ? `<div class="profile-item"><span class="profile-label">Headline:</span> ${profileData.headline}</div>` : ''}
+    ${profileData.location ? `<div class="profile-item"><span class="profile-label">Location:</span> ${profileData.location}</div>` : ''}
+    ${profileData.about ? `<div class="profile-item"><span class="profile-label">About:</span> ${profileData.about.length > 100 ? profileData.about.substring(0, 100) + '...' : profileData.about}</div>` : ''}
+    <div class="profile-item"><span class="profile-label">Experience:</span>${experienceHtml}</div>
+  `;
+}
+
+async function generateMessage() {
+  if (!profileData) {
+    showError('No profile data available.');
+    return;
+  }
+
+  const generateBtn = widget?.querySelector('#relavo-generate-btn') as HTMLElement;
+  const errorEl = widget?.querySelector('#relavo-error') as HTMLElement;
+  const outputEl = widget?.querySelector('#relavo-message-output') as HTMLElement;
+
+  generateBtn.innerHTML = '<div class="relavo-spinner"></div> Generating...';
+  generateBtn.setAttribute('disabled', 'true');
+  errorEl.classList.remove('visible');
+  outputEl.classList.remove('visible');
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'GENERATE_MESSAGE',
+      profileData,
+      businessContext: '',
+      tone: 'professional',
+    });
+
+    if (response.error) {
+      showError(response.error);
+    } else if (response.message) {
+      const messageText = widget?.querySelector('#relavo-message-text') as HTMLElement;
+      messageText.textContent = response.message;
+      outputEl.classList.add('visible');
+    }
+  } catch (error) {
+    showError('Failed to generate message. Check your API key in the extension settings.');
+  } finally {
+    generateBtn.innerHTML = 'Generate Message';
+    generateBtn.removeAttribute('disabled');
+  }
+}
+
+function showError(message: string) {
+  const errorEl = widget?.querySelector('#relavo-error') as HTMLElement;
+  if (errorEl) {
+    errorEl.textContent = message;
+    errorEl.classList.add('visible');
+  }
+}
+
+function copyMessage() {
+  const messageText = widget?.querySelector('#relavo-message-text') as HTMLElement;
+  const copyBtn = widget?.querySelector('#relavo-copy-btn') as HTMLElement;
+
+  if (messageText?.textContent) {
+    navigator.clipboard.writeText(messageText.textContent);
+    copyBtn.innerHTML = '<span>✓</span> Copied!';
+    setTimeout(() => {
+      copyBtn.innerHTML = '<span>📋</span> Copy';
+    }, 2000);
+  }
+}
 
 function extractProfileData(): ProfileData | null {
   try {
-    // Try to extract from JSON-LD first (more reliable)
     const jsonLdData = extractFromJsonLd();
-    if (jsonLdData) {
-      return jsonLdData;
-    }
-
-    // Fallback to DOM extraction
+    if (jsonLdData) return jsonLdData;
     return extractFromDom();
   } catch (error) {
     console.error('Error extracting profile data:', error);
@@ -39,7 +457,6 @@ function extractProfileData(): ProfileData | null {
 
 function extractFromJsonLd(): ProfileData | null {
   const scripts = document.querySelectorAll('script[type="application/ld+json"]');
-
   for (const script of scripts) {
     try {
       const data = JSON.parse(script.textContent || '');
@@ -56,29 +473,23 @@ function extractFromJsonLd(): ProfileData | null {
       continue;
     }
   }
-
   return null;
 }
 
 function extractExperienceFromJsonLd(data: Record<string, unknown>): string[] {
   const experience: string[] = [];
   const worksFor = data.worksFor;
-
   if (Array.isArray(worksFor)) {
     for (const job of worksFor) {
-      if (job.name) {
-        experience.push(job.name);
-      }
+      if (job.name) experience.push(job.name);
     }
   } else if (worksFor && typeof worksFor === 'object' && 'name' in worksFor) {
     experience.push(String(worksFor.name));
   }
-
   return experience;
 }
 
 function extractFromDom(): ProfileData | null {
-  // Name - multiple selector fallbacks
   const name = extractText([
     '.text-heading-xlarge',
     'h1.text-heading-xlarge',
@@ -87,119 +498,102 @@ function extractFromDom(): ProfileData | null {
     '.artdeco-entity-lockup__title',
   ]);
 
-  if (!name) {
-    return null; // Name is required
-  }
+  if (!name) return null;
 
-  // Headline
   const headline = extractText([
     '.text-body-medium.break-words',
     '.pv-top-card .text-body-medium',
     '.pv-text-details__left-panel .text-body-medium',
   ]);
 
-  // Location
   const location = extractText([
     '.text-body-small.inline.t-black--light.break-words',
     '.pv-top-card .text-body-small.t-black--light',
     '.pv-text-details__left-panel .text-body-small',
   ]);
 
-  // About section
   const about = extractAboutSection();
-
-  // Experience
   const experience = extractExperience();
 
-  return {
-    name,
-    headline: headline || '',
-    about: about || '',
-    experience,
-    location: location || '',
-  };
+  return { name, headline: headline || '', about: about || '', experience, location: location || '' };
 }
 
 function extractText(selectors: string[]): string {
   for (const selector of selectors) {
     const element = document.querySelector(selector);
-    if (element?.textContent) {
-      return element.textContent.trim();
-    }
+    if (element?.textContent) return element.textContent.trim();
   }
   return '';
 }
 
 function extractAboutSection(): string {
-  // Try to find the about section
   const aboutSection = document.querySelector('#about');
   if (aboutSection) {
-    // Navigate to the text content within the about section
     const aboutText = aboutSection.closest('section')?.querySelector('.pv-shared-text-with-see-more span[aria-hidden="true"]');
-    if (aboutText?.textContent) {
-      return aboutText.textContent.trim();
-    }
-
-    // Fallback: get any span with substantial text in the about section
+    if (aboutText?.textContent) return aboutText.textContent.trim();
     const spans = aboutSection.closest('section')?.querySelectorAll('span');
     if (spans) {
       for (const span of spans) {
         const text = span.textContent?.trim();
-        if (text && text.length > 50) {
-          return text;
-        }
+        if (text && text.length > 50) return text;
       }
     }
   }
-
-  // Alternative selector for about section
   const aboutDiv = document.querySelector('[data-generated-suggestion-target="urn:li:fsd_profileAbout"]');
-  if (aboutDiv?.textContent) {
-    return aboutDiv.textContent.trim();
-  }
-
+  if (aboutDiv?.textContent) return aboutDiv.textContent.trim();
   return '';
 }
 
 function extractExperience(): string[] {
   const experience: string[] = [];
-
-  // Find the experience section
   const experienceSection = document.querySelector('#experience');
-  if (!experienceSection) {
-    return experience;
-  }
+  if (!experienceSection) return experience;
 
   const section = experienceSection.closest('section');
-  if (!section) {
-    return experience;
-  }
+  if (!section) return experience;
 
-  // Find all experience items
   const experienceItems = section.querySelectorAll('.artdeco-list__item, li.pvs-list__paged-list-item');
-
   for (const item of experienceItems) {
-    // Try to extract job title and company
     const titleElement = item.querySelector('.t-bold span[aria-hidden="true"], .mr1.t-bold span');
     const companyElement = item.querySelector('.t-14.t-normal span[aria-hidden="true"], .t-14.t-normal .t-black--light span');
-
     const title = titleElement?.textContent?.trim();
     const company = companyElement?.textContent?.trim();
-
     if (title && company) {
       experience.push(`${title} at ${company}`);
     } else if (title) {
       experience.push(title);
     }
-
-    // Limit to 5 most recent experiences
-    if (experience.length >= 5) {
-      break;
-    }
+    if (experience.length >= 5) break;
   }
-
   return experience;
 }
 
-// Signal that content script is loaded
+// Listen for messages from popup/background
+chrome.runtime.onMessage.addListener(
+  (
+    message: ExtensionMessage,
+    _sender: chrome.runtime.MessageSender,
+    sendResponse: (response: ProfileDataResponseMessage) => void
+  ) => {
+    if (message.type === 'GET_PROFILE_DATA') {
+      sendResponse({
+        type: 'PROFILE_DATA_RESPONSE',
+        data: extractProfileData(),
+      });
+    } else if (message.type === 'TOGGLE_WIDGET') {
+      if (widget) {
+        widget.remove();
+        widget = null;
+      } else {
+        createWidget();
+      }
+    }
+    return false;
+  }
+);
+
+// Initialize
+injectStyles();
+createWidget();
+
 console.log('Relavo content script loaded');

@@ -3,7 +3,7 @@ import type {
   GenerateMessageRequest,
   GenerateMessageResponse,
 } from '../shared/types';
-import { getApiKey } from '../shared/storage';
+import { getStorageData } from '../shared/storage';
 
 chrome.runtime.onMessage.addListener(
   (
@@ -30,16 +30,20 @@ chrome.runtime.onMessage.addListener(
 async function handleGenerateMessage(
   request: GenerateMessageRequest
 ): Promise<GenerateMessageResponse> {
-  const apiKey = await getApiKey();
+  // Get settings from storage (content script may send empty values)
+  const storedData = await getStorageData();
+  const apiKey = storedData.apiKey;
+  const businessContext = request.businessContext || storedData.businessContext;
+  const tone = request.tone || storedData.tone;
 
   if (!apiKey) {
     return {
       type: 'GENERATE_MESSAGE_RESPONSE',
-      error: 'API key not configured. Please add your Anthropic API key in settings.',
+      error: 'API key not configured. Click the Relavo extension icon to add your Anthropic API key.',
     };
   }
 
-  const { profileData, businessContext, tone } = request;
+  const { profileData } = request;
 
   const prompt = `You are helping craft a personalized LinkedIn first message after a connection request was accepted.
 
