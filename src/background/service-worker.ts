@@ -33,6 +33,7 @@ async function handleGenerateMessage(
   // Get settings from storage (content script may send empty values)
   const storedData = await getStorageData();
   const apiKey = storedData.apiKey;
+  const model = storedData.model || 'claude-sonnet-4-20250514';
   const businessContext = request.businessContext || storedData.businessContext;
   const tone = request.tone || storedData.tone;
 
@@ -76,7 +77,7 @@ Return ONLY the message text, no preamble or explanation.`;
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: model,
         max_tokens: 1024,
         messages: [
           {

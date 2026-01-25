@@ -1,21 +1,23 @@
 import { useState, useEffect } from 'react';
-import { Settings, ExternalLink } from 'lucide-react';
+import { Settings, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 import { getStorageData, setStorageData } from '../shared/storage';
 import { getActiveTab } from '../shared/messaging';
+import { AVAILABLE_MODELS } from '../shared/types';
 
 export default function Popup() {
   const [apiKey, setApiKey] = useState('');
-  const [businessContext, setBusinessContext] = useState('');
-  const [tone, setTone] = useState('professional');
+  const [model, setModel] = useState('claude-sonnet-4-20250514');
   const [isOnLinkedIn, setIsOnLinkedIn] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [isConfigExpanded, setIsConfigExpanded] = useState(true);
 
   useEffect(() => {
     async function initialize() {
       const storedData = await getStorageData();
       setApiKey(storedData.apiKey);
-      setBusinessContext(storedData.businessContext);
-      setTone(storedData.tone);
+      setModel(storedData.model || 'claude-sonnet-4-20250514');
+      // Collapse config by default if API key is already set
+      setIsConfigExpanded(!storedData.apiKey);
 
       const tab = await getActiveTab();
       setIsOnLinkedIn(tab?.url?.includes('linkedin.com/in/') || false);
@@ -24,7 +26,7 @@ export default function Popup() {
   }, []);
 
   const handleSave = async () => {
-    await setStorageData({ apiKey, businessContext, tone });
+    await setStorageData({ apiKey, model });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -42,7 +44,7 @@ export default function Popup() {
         </div>
         <div>
           <h1 className="text-lg font-bold text-gray-900">Relavo</h1>
-          <p className="text-xs text-gray-500">Settings</p>
+          <p className="text-xs text-gray-500">LinkedIn AI Assistant</p>
         </div>
       </div>
 
@@ -68,78 +70,85 @@ export default function Popup() {
         </div>
       )}
 
-      {/* Settings */}
-      <div className="bg-white rounded-lg p-4 border border-gray-200">
-        <div className="flex items-center gap-2 mb-3">
-          <Settings className="w-4 h-4 text-gray-600" />
-          <h2 className="font-semibold text-gray-900 text-sm">Configuration</h2>
-        </div>
+      {/* Configuration - Collapsible */}
+      <div className="bg-white rounded-lg border border-gray-200 mb-3">
+        <button
+          onClick={() => setIsConfigExpanded(!isConfigExpanded)}
+          className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Settings className="w-4 h-4 text-gray-600" />
+            <h2 className="font-semibold text-gray-900 text-sm">API Configuration</h2>
+          </div>
+          {isConfigExpanded ? (
+            <ChevronUp className="w-4 h-4 text-gray-500" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-500" />
+          )}
+        </button>
 
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Anthropic API Key
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-ant-..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Get your key at{' '}
-              <a
-                href="https://console.anthropic.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline"
+        {isConfigExpanded && (
+          <div className="px-4 pb-4 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Anthropic API Key
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-ant-..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Get your key at{' '}
+                <a
+                  href="https://console.anthropic.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  console.anthropic.com
+                </a>
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                AI Model
+              </label>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               >
-                console.anthropic.com
-              </a>
-            </p>
-          </div>
+                {AVAILABLE_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Your Business Context
-            </label>
-            <textarea
-              value={businessContext}
-              onChange={(e) => setBusinessContext(e.target.value)}
-              placeholder="e.g., I help B2B SaaS companies optimize their marketing..."
-              rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">
-              Message Tone
-            </label>
-            <select
-              value={tone}
-              onChange={(e) => setTone(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            <button
+              onClick={handleSave}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
             >
-              <option value="professional">Professional</option>
-              <option value="friendly">Friendly</option>
-              <option value="casual">Casual</option>
-              <option value="enthusiastic">Enthusiastic</option>
-            </select>
+              {saved ? 'Saved!' : 'Save Settings'}
+            </button>
           </div>
+        )}
+      </div>
 
-          <button
-            onClick={handleSave}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
-          >
-            {saved ? 'Saved!' : 'Save Settings'}
-          </button>
-        </div>
+      {/* Info about widget settings */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+        <p className="text-xs text-blue-800">
+          <strong>Tip:</strong> Business context and message tone can be adjusted directly in the widget using the gear icon.
+        </p>
       </div>
 
       {/* Footer */}
-      <p className="text-xs text-gray-500 text-center mt-3">
+      <p className="text-xs text-gray-500 text-center">
         v1.0.0 - The widget appears on LinkedIn profile pages
       </p>
     </div>

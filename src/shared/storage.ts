@@ -2,6 +2,7 @@ import type { StorageData } from './types';
 
 const DEFAULT_STORAGE: StorageData = {
   apiKey: '',
+  model: 'claude-sonnet-4-20250514',
   businessContext: '',
   tone: 'professional',
 };
@@ -47,4 +48,13 @@ export async function getTone(): Promise<string> {
 
 export async function setTone(tone: string): Promise<void> {
   await setStorageData({ tone });
+}
+
+export async function getModel(): Promise<string> {
+  const data = await getStorageData();
+  return data.model;
+}
+
+export async function setModel(model: string): Promise<void> {
+  await setStorageData({ model });
 }

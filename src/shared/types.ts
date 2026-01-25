@@ -8,9 +8,15 @@ export interface ProfileData {
 
 export interface StorageData {
   apiKey: string;
+  model: string;
   businessContext: string;
   tone: string;
 }
+
+export const AVAILABLE_MODELS = [
+  { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
+  { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Fast)' },
+] as const;
 
 export type MessageType =
   | 'GET_PROFILE_DATA'

@@ -2,6 +2,7 @@ import type {
   ExtensionMessage,
   ProfileData,
   ProfileDataResponseMessage,
+  StorageData,
 } from '../shared/types';
 
 // Inject styles for the widget
@@ -248,12 +249,126 @@ const styles = `
   #relavo-widget.minimized #relavo-content {
     display: none;
   }
+
+  #relavo-settings-panel {
+    background: white;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid #e2e8f0;
+    display: none;
+  }
+
+  #relavo-settings-panel.visible {
+    display: block;
+  }
+
+  #relavo-settings-panel h4 {
+    margin: 0 0 10px 0;
+    font-size: 13px;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .relavo-setting-group {
+    margin-bottom: 10px;
+  }
+
+  .relavo-setting-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .relavo-setting-group label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 4px;
+  }
+
+  .relavo-setting-group textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 60px;
+    color: #334155;
+  }
+
+  .relavo-setting-group textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+
+  .relavo-setting-group select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #334155;
+    background: white;
+    cursor: pointer;
+  }
+
+  .relavo-setting-group select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+
+  #relavo-settings-toggle {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: background 0.2s;
+  }
+
+  #relavo-settings-toggle:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  #relavo-settings-toggle.active {
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  .relavo-settings-saved {
+    font-size: 10px;
+    color: #10b981;
+    margin-top: 6px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .relavo-settings-saved.visible {
+    opacity: 1;
+  }
 `;
 
 let widget: HTMLElement | null = null;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let profileData: ProfileData | null = null;
+let lastUrl = location.href;
+let settingsState: { businessContext: string; tone: string } = {
+  businessContext: '',
+  tone: 'professional',
+};
+let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function injectStyles() {
   const styleElement = document.createElement('style');
@@ -261,8 +376,94 @@ function injectStyles() {
   document.head.appendChild(styleElement);
 }
 
-function createWidget() {
+function isLinkedInProfileUrl(url: string): boolean {
+  return /linkedin\.com\/in\/[^\/]+\/?(\?.*)?$/.test(url);
+}
+
+function setupNavigationListener() {
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+
+  history.pushState = function (...args) {
+    originalPushState.apply(this, args);
+    handleUrlChange();
+  };
+
+  history.replaceState = function (...args) {
+    originalReplaceState.apply(this, args);
+    handleUrlChange();
+  };
+
+  window.addEventListener('popstate', handleUrlChange);
+
+  // Polling fallback for LinkedIn's SPA navigation that may not trigger History API
+  setInterval(() => {
+    if (location.href !== lastUrl) {
+      handleUrlChange();
+    }
+  }, 500);
+}
+
+function handleUrlChange() {
+  const currentUrl = location.href;
+  if (currentUrl === lastUrl) return;
+  lastUrl = currentUrl;
+
+  const isProfile = isLinkedInProfileUrl(currentUrl);
+
+  if (isProfile && !widget) {
+    createWidget();
+  } else if (!isProfile && widget) {
+    removeWidget();
+  } else if (isProfile && widget) {
+    loadProfileData();
+  }
+}
+
+function removeWidget() {
+  if (widget) {
+    widget.remove();
+    widget = null;
+  }
+}
+
+async function loadSettingsFromStorage() {
+  return new Promise<void>((resolve) => {
+    chrome.storage.sync.get(['businessContext', 'tone'], (result) => {
+      settingsState.businessContext = (result as StorageData).businessContext || '';
+      settingsState.tone = (result as StorageData).tone || 'professional';
+      resolve();
+    });
+  });
+}
+
+function saveSettingsToStorage() {
+  if (saveDebounceTimer) {
+    clearTimeout(saveDebounceTimer);
+  }
+  saveDebounceTimer = setTimeout(() => {
+    chrome.storage.sync.set({
+      businessContext: settingsState.businessContext,
+      tone: settingsState.tone,
+    });
+    showSettingsSaved();
+  }, 500);
+}
+
+function showSettingsSaved() {
+  const savedIndicator = widget?.querySelector('.relavo-settings-saved');
+  if (savedIndicator) {
+    savedIndicator.classList.add('visible');
+    setTimeout(() => {
+      savedIndicator.classList.remove('visible');
+    }, 1500);
+  }
+}
+
+async function createWidget() {
   if (widget) return;
+
+  await loadSettingsFromStorage();
 
   widget = document.createElement('div');
   widget.id = 'relavo-widget';
@@ -270,12 +471,34 @@ function createWidget() {
     <div id="relavo-header">
       <h3>Relavo</h3>
       <div id="relavo-header-buttons">
+        <button id="relavo-settings-toggle" title="Settings">⚙</button>
         <button id="relavo-refresh" title="Refresh profile data">↻</button>
         <button id="relavo-minimize" title="Minimize">−</button>
         <button id="relavo-close" title="Close">×</button>
       </div>
     </div>
     <div id="relavo-content">
+      <div id="relavo-settings-panel">
+        <h4>⚙ Message Settings</h4>
+        <div class="relavo-setting-group">
+          <label for="relavo-business-context">Your Business Context</label>
+          <textarea
+            id="relavo-business-context"
+            placeholder="e.g., I help B2B SaaS companies optimize their marketing..."
+            rows="2"
+          >${settingsState.businessContext}</textarea>
+        </div>
+        <div class="relavo-setting-group">
+          <label for="relavo-tone">Message Tone</label>
+          <select id="relavo-tone">
+            <option value="professional" ${settingsState.tone === 'professional' ? 'selected' : ''}>Professional</option>
+            <option value="friendly" ${settingsState.tone === 'friendly' ? 'selected' : ''}>Friendly</option>
+            <option value="casual" ${settingsState.tone === 'casual' ? 'selected' : ''}>Casual</option>
+            <option value="enthusiastic" ${settingsState.tone === 'enthusiastic' ? 'selected' : ''}>Enthusiastic</option>
+          </select>
+        </div>
+        <div class="relavo-settings-saved">✓ Settings saved</div>
+      </div>
       <div id="relavo-profile">
         <h4>Profile Data</h4>
         <div id="relavo-profile-content">Loading...</div>
@@ -309,6 +532,10 @@ function setupEventListeners() {
   const refreshBtn = widget.querySelector('#relavo-refresh') as HTMLElement;
   const generateBtn = widget.querySelector('#relavo-generate-btn') as HTMLElement;
   const copyBtn = widget.querySelector('#relavo-copy-btn') as HTMLElement;
+  const settingsToggle = widget.querySelector('#relavo-settings-toggle') as HTMLElement;
+  const settingsPanel = widget.querySelector('#relavo-settings-panel') as HTMLElement;
+  const businessContextInput = widget.querySelector('#relavo-business-context') as HTMLTextAreaElement;
+  const toneSelect = widget.querySelector('#relavo-tone') as HTMLSelectElement;
 
   // Dragging
   header.addEventListener('mousedown', (e) => {
@@ -346,6 +573,24 @@ function setupEventListeners() {
   minimizeBtn.addEventListener('click', () => {
     widget?.classList.toggle('minimized');
     minimizeBtn.textContent = widget?.classList.contains('minimized') ? '+' : '−';
+  });
+
+  // Settings toggle
+  settingsToggle.addEventListener('click', () => {
+    settingsPanel.classList.toggle('visible');
+    settingsToggle.classList.toggle('active');
+  });
+
+  // Business context change
+  businessContextInput.addEventListener('input', () => {
+    settingsState.businessContext = businessContextInput.value;
+    saveSettingsToStorage();
+  });
+
+  // Tone change
+  toneSelect.addEventListener('change', () => {
+    settingsState.tone = toneSelect.value;
+    saveSettingsToStorage();
   });
 
   // Refresh
@@ -404,8 +649,8 @@ async function generateMessage() {
     const response = await chrome.runtime.sendMessage({
       type: 'GENERATE_MESSAGE',
       profileData,
-      businessContext: '',
-      tone: 'professional',
+      businessContext: settingsState.businessContext,
+      tone: settingsState.tone,
     });
 
     if (response.error) {
@@ -594,6 +839,10 @@ chrome.runtime.onMessage.addListener(
 
 // Initialize
 injectStyles();
-createWidget();
+setupNavigationListener();
+
+if (isLinkedInProfileUrl(location.href)) {
+  createWidget();
+}
 
 console.log('Relavo content script loaded');
