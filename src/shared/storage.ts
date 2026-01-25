@@ -1,4 +1,4 @@
-import type { StorageData, LLMProvider, ApiKeys, SystemPrompts } from './types';
+import type { StorageData, LLMProvider, ApiKeys, SystemPrompts, WidgetPosition } from './types';
 import { DEFAULT_SYSTEM_PROMPTS, AVAILABLE_MODELS } from './types';
 
 const DEFAULT_STORAGE: StorageData = {
@@ -9,6 +9,7 @@ const DEFAULT_STORAGE: StorageData = {
 
   // Behavior Settings
   autoFetchProfile: true,
+  widgetPosition: 'top-right',
 
   // Prompts
   systemPrompts: DEFAULT_SYSTEM_PROMPTS,
@@ -87,6 +88,16 @@ export async function getAutoFetchProfile(): Promise<boolean> {
 
 export async function setAutoFetchProfile(autoFetch: boolean): Promise<void> {
   await setStorageData({ autoFetchProfile: autoFetch });
+}
+
+// Widget Position
+export async function getWidgetPosition(): Promise<WidgetPosition> {
+  const data = await getStorageData();
+  return data.widgetPosition;
+}
+
+export async function setWidgetPosition(position: WidgetPosition): Promise<void> {
+  await setStorageData({ widgetPosition: position });
 }
 
 // System Prompts

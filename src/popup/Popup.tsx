@@ -4,21 +4,18 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
-  RefreshCw,
   CheckCircle,
-  AlertCircle,
   Edit3,
   RotateCcw,
 } from 'lucide-react';
 import { getStorageData, setStorageData, setApiKey, setActiveProvider, resetSystemPrompts } from '../shared/storage';
-import { getActiveTab, requestProfileData } from '../shared/messaging';
+import { getActiveTab } from '../shared/messaging';
 import {
   AVAILABLE_MODELS,
   DEFAULT_SYSTEM_PROMPTS,
   type LLMProvider,
-  type ProfileData,
-  type ProfileAnalysis,
   type StorageData,
+  type WidgetPosition,
 } from '../shared/types';
 
 export default function Popup() {
@@ -29,12 +26,6 @@ export default function Popup() {
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
   const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
   const [isApiKeysExpanded, setIsApiKeysExpanded] = useState(false);
-
-  // Profile analysis state
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
-  const [profileAnalysis, setProfileAnalysis] = useState<ProfileAnalysis | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   // Editable prompts state
   const [editedPrompts, setEditedPrompts] = useState({
@@ -58,49 +49,9 @@ export default function Popup() {
       const tab = await getActiveTab();
       const isProfile = tab?.url?.includes('linkedin.com/in/') || false;
       setIsOnLinkedIn(isProfile);
-
-      // If on LinkedIn and auto-fetch is enabled, get profile data and analyze
-      if (isProfile && tab?.id) {
-        try {
-          const profile = await requestProfileData(tab.id);
-          if (profile) {
-            setProfileData(profile);
-            if (data.autoFetchProfile && hasApiKey) {
-              analyzeProfile(profile);
-            }
-          }
-        } catch (err) {
-          console.error('Failed to get profile data:', err);
-        }
-      }
     }
     initialize();
   }, []);
-
-  const analyzeProfile = async (profile: ProfileData) => {
-    if (!profile) return;
-
-    setIsAnalyzing(true);
-    setAnalysisError(null);
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'ANALYZE_PROFILE',
-        profileData: profile,
-      });
-
-      if (response.error) {
-        setAnalysisError(response.error);
-      } else if (response.analysis) {
-        setProfileAnalysis(response.analysis);
-      }
-    } catch (err) {
-      setAnalysisError('Failed to analyze profile');
-      console.error(err);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
 
   const handleProviderChange = async (provider: LLMProvider) => {
     await setActiveProvider(provider);
@@ -125,6 +76,13 @@ export default function Popup() {
   const handleAutoFetchToggle = async () => {
     if (!storageData) return;
     await setStorageData({ autoFetchProfile: !storageData.autoFetchProfile });
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+    showSaved();
+  };
+
+  const handleWidgetPositionChange = async (position: WidgetPosition) => {
+    await setStorageData({ widgetPosition: position });
     const updated = await getStorageData();
     setStorageDataState(updated);
     showSaved();
@@ -163,12 +121,6 @@ export default function Popup() {
     chrome.tabs.create({ url: 'https://www.linkedin.com' });
   };
 
-  const handleRefreshAnalysis = () => {
-    if (profileData) {
-      analyzeProfile(profileData);
-    }
-  };
-
   if (!storageData) {
     return (
       <div className="w-96 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
@@ -178,7 +130,6 @@ export default function Popup() {
   }
 
   const currentProvider = storageData.activeProvider;
-  const currentApiKey = storageData.apiKeys[currentProvider] || '';
   const availableModels = AVAILABLE_MODELS[currentProvider];
 
   return (
@@ -201,77 +152,15 @@ export default function Popup() {
         )}
       </div>
 
-      {/* Status / Profile Analysis */}
+      {/* Status Banner */}
       {isOnLinkedIn ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-3 mb-4">
-          {/* Profile Header */}
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-green-500" />
-              <span className="text-sm font-medium text-gray-900">
-                {profileData?.name || 'Loading profile...'}
-              </span>
-            </div>
-            <button
-              onClick={handleRefreshAnalysis}
-              disabled={isAnalyzing}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
-              title="Refresh analysis"
-            >
-              <RefreshCw className={`w-4 h-4 text-gray-500 ${isAnalyzing ? 'animate-spin' : ''}`} />
-            </button>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-green-500" />
+            <p className="text-sm text-green-800">
+              You're on a LinkedIn profile. Use the Relavo widget on the page to analyze and generate messages.
+            </p>
           </div>
-
-          {/* Analysis Content */}
-          {isAnalyzing ? (
-            <div className="text-sm text-gray-500 flex items-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              Analyzing profile...
-            </div>
-          ) : analysisError ? (
-            <div className="text-sm text-red-600 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {analysisError}
-            </div>
-          ) : profileAnalysis ? (
-            <>
-              {/* Interests */}
-              <div className="mb-3">
-                <p className="text-xs font-medium text-gray-500 mb-1">Interests</p>
-                <div className="flex flex-wrap gap-1">
-                  {profileAnalysis.interests.map((interest, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full"
-                    >
-                      {interest}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Alignment Suggestion */}
-              <div>
-                <p className="text-xs font-medium text-gray-500 mb-1">How to Align</p>
-                <p className="text-sm text-gray-700 leading-relaxed">
-                  {profileAnalysis.alignmentSuggestion}
-                </p>
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-2">
-              <button
-                onClick={handleRefreshAnalysis}
-                disabled={!currentApiKey}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                Analyze Profile
-              </button>
-              {!currentApiKey && (
-                <p className="text-xs text-gray-500 mt-2">Configure API key first</p>
-              )}
-            </div>
-          )}
         </div>
       ) : (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
@@ -411,7 +300,7 @@ export default function Popup() {
               )}
             </div>
 
-            {/* Auto-fetch Toggle */}
+            {/* Auto-analyze Toggle */}
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-medium text-gray-700">Auto-analyze profiles</p>
@@ -432,6 +321,53 @@ export default function Popup() {
               </button>
             </div>
 
+            {/* Widget Position */}
+            <div>
+              <p className="text-xs font-medium text-gray-700 mb-2">Widget Position</p>
+              <div className="grid grid-cols-2 gap-1">
+                <button
+                  onClick={() => handleWidgetPositionChange('top-left')}
+                  className={`p-2 rounded text-xs font-medium transition-colors ${
+                    storageData.widgetPosition === 'top-left'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  ↖ TL
+                </button>
+                <button
+                  onClick={() => handleWidgetPositionChange('top-right')}
+                  className={`p-2 rounded text-xs font-medium transition-colors ${
+                    storageData.widgetPosition === 'top-right'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  ↗ TR
+                </button>
+                <button
+                  onClick={() => handleWidgetPositionChange('bottom-left')}
+                  className={`p-2 rounded text-xs font-medium transition-colors ${
+                    storageData.widgetPosition === 'bottom-left'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  ↙ BL
+                </button>
+                <button
+                  onClick={() => handleWidgetPositionChange('bottom-right')}
+                  className={`p-2 rounded text-xs font-medium transition-colors ${
+                    storageData.widgetPosition === 'bottom-right'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  ↘ BR
+                </button>
+              </div>
+            </div>
+
             {/* System Prompts */}
             <div>
               <button
@@ -449,7 +385,7 @@ export default function Popup() {
       {/* Tips */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
         <p className="text-xs text-blue-800">
-          <strong>Tip:</strong> The widget on LinkedIn profile pages lets you generate messages with customizable tone and relationship type.
+          <strong>Tip:</strong> The widget on LinkedIn profile pages lets you analyze profiles and generate personalized messages.
         </p>
       </div>
 

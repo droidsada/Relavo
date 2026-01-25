@@ -1,6 +1,9 @@
 // LLM Provider Types
 export type LLMProvider = 'anthropic' | 'openai' | 'gemini';
 
+// Widget Position Type
+export type WidgetPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 export interface ApiKeys {
   anthropic?: string;
   openai?: string;
@@ -35,6 +38,7 @@ export interface StorageData {
 
   // Behavior Settings
   autoFetchProfile: boolean;
+  widgetPosition: WidgetPosition;
 
   // Prompts
   systemPrompts: SystemPrompts;

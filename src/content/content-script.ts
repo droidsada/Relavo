@@ -4,14 +4,13 @@ import type {
   ProfileDataResponseMessage,
   ProfileAnalysis,
   StorageData,
+  WidgetPosition,
 } from '../shared/types';
 
 // Inject styles for the widget
 const styles = `
   #relavo-widget {
     position: fixed;
-    top: 100px;
-    right: 20px;
     width: 380px;
     min-width: 320px;
     min-height: 200px;
@@ -75,30 +74,112 @@ const styles = `
     overflow-y: auto;
   }
 
-  #relavo-profile {
+  #relavo-profile-section {
     background: white;
     border-radius: 8px;
     padding: 12px;
     margin-bottom: 12px;
-    font-size: 12px;
     border: 1px solid #e2e8f0;
   }
 
-  #relavo-profile h4 {
-    margin: 0 0 8px 0;
-    font-size: 13px;
-    color: #1e293b;
-  }
-
-  #relavo-profile .profile-item {
-    margin-bottom: 6px;
-    color: #475569;
-    line-height: 1.4;
-  }
-
-  #relavo-profile .profile-label {
+  #relavo-profile-section .profile-name {
+    font-size: 14px;
     font-weight: 600;
-    color: #334155;
+    color: #1e293b;
+    margin: 0 0 10px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  #relavo-profile-section .profile-name button {
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s, background 0.2s;
+  }
+
+  #relavo-profile-section .profile-name button:hover {
+    color: #3b82f6;
+    background: #f1f5f9;
+  }
+
+  #relavo-profile-section .profile-name button.loading {
+    animation: relavo-spin 0.8s linear infinite;
+  }
+
+  .relavo-analysis-section {
+    margin-top: 8px;
+  }
+
+  .relavo-analysis-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+
+  .relavo-interests {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+
+  .relavo-interest-tag {
+    padding: 4px 8px;
+    background: #eff6ff;
+    color: #3b82f6;
+    font-size: 11px;
+    border-radius: 12px;
+  }
+
+  .relavo-alignment {
+    font-size: 12px;
+    color: #475569;
+    line-height: 1.5;
+  }
+
+  .relavo-analysis-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .relavo-analysis-error {
+    color: #dc2626;
+    font-size: 12px;
+  }
+
+  .relavo-analyze-btn {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .relavo-analyze-btn:hover {
+    background: #2563eb;
+  }
+
+  .relavo-analyze-btn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
   }
 
   /* Chip Styles */
@@ -417,12 +498,15 @@ let dragOffset = { x: 0, y: 0 };
 let profileData: ProfileData | null = null;
 let profileAnalysis: ProfileAnalysis | null = null;
 let lastUrl = location.href;
-let settingsState: { businessContext: string; vibe: string; relationship: string; customContext: string } = {
+let settingsState: { businessContext: string; vibe: string; relationship: string; customContext: string; widgetPosition: WidgetPosition; autoFetchProfile: boolean } = {
   businessContext: '',
   vibe: 'professional',
   relationship: 'cold',
   customContext: '',
+  widgetPosition: 'top-right',
+  autoFetchProfile: true,
 };
+let isAnalyzing = false;
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function injectStyles() {
@@ -473,6 +557,8 @@ function handleUrlChange() {
   } else if (isProfile && widget) {
     // Reset for new profile
     profileAnalysis = null;
+    isAnalyzing = false;
+    clearGeneratedMessage();
     loadProfileData();
   }
 }
@@ -486,14 +572,45 @@ function removeWidget() {
 
 async function loadSettingsFromStorage() {
   return new Promise<void>((resolve) => {
-    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship'], (result) => {
+    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship', 'widgetPosition', 'autoFetchProfile'], (result) => {
       const data = result as Partial<StorageData>;
       settingsState.businessContext = data.businessContext || '';
       settingsState.vibe = data.defaultVibe || 'professional';
       settingsState.relationship = data.defaultRelationship || 'cold';
+      settingsState.widgetPosition = data.widgetPosition || 'top-right';
+      settingsState.autoFetchProfile = data.autoFetchProfile !== false; // default true
       resolve();
     });
   });
+}
+
+function getPositionStyles(position: WidgetPosition): { top?: string; bottom?: string; left?: string; right?: string } {
+  switch (position) {
+    case 'top-left':
+      return { top: '100px', left: '20px' };
+    case 'top-right':
+      return { top: '100px', right: '20px' };
+    case 'bottom-left':
+      return { bottom: '100px', left: '20px' };
+    case 'bottom-right':
+      return { bottom: '100px', right: '20px' };
+    default:
+      return { top: '100px', right: '20px' };
+  }
+}
+
+function applyWidgetPosition(widgetEl: HTMLElement, position: WidgetPosition) {
+  // Clear any existing position styles
+  widgetEl.style.top = '';
+  widgetEl.style.bottom = '';
+  widgetEl.style.left = '';
+  widgetEl.style.right = '';
+
+  const styles = getPositionStyles(position);
+  if (styles.top) widgetEl.style.top = styles.top;
+  if (styles.bottom) widgetEl.style.bottom = styles.bottom;
+  if (styles.left) widgetEl.style.left = styles.left;
+  if (styles.right) widgetEl.style.right = styles.right;
 }
 
 function saveSettingsToStorage() {
@@ -551,9 +668,12 @@ async function createWidget() {
         <div class="relavo-settings-saved">&#10003; Settings saved</div>
       </div>
 
-      <div id="relavo-profile">
-        <h4>Profile</h4>
-        <div id="relavo-profile-content">Loading...</div>
+      <div id="relavo-profile-section">
+        <div class="profile-name">
+          <span id="relavo-profile-name">Loading...</span>
+          <button id="relavo-analyze-btn" title="Analyze profile">&#8635;</button>
+        </div>
+        <div id="relavo-analysis-content"></div>
       </div>
 
       <div class="relavo-chip-section">
@@ -606,6 +726,7 @@ async function createWidget() {
   `;
 
   document.body.appendChild(widget);
+  applyWidgetPosition(widget, settingsState.widgetPosition);
   setupEventListeners();
   loadProfileData();
 }
@@ -617,6 +738,7 @@ function setupEventListeners() {
   const closeBtn = widget.querySelector('#relavo-close') as HTMLElement;
   const minimizeBtn = widget.querySelector('#relavo-minimize') as HTMLElement;
   const refreshBtn = widget.querySelector('#relavo-refresh') as HTMLElement;
+  const analyzeBtn = widget.querySelector('#relavo-analyze-btn') as HTMLElement;
   const generateBtn = widget.querySelector('#relavo-generate-btn') as HTMLElement;
   const copyBtn = widget.querySelector('#relavo-copy-btn') as HTMLElement;
   const settingsToggle = widget.querySelector('#relavo-settings-toggle') as HTMLElement;
@@ -702,7 +824,13 @@ function setupEventListeners() {
   });
 
   // Refresh
-  refreshBtn.addEventListener('click', loadProfileData);
+  refreshBtn.addEventListener('click', () => {
+    profileAnalysis = null;
+    loadProfileData();
+  });
+
+  // Analyze
+  analyzeBtn.addEventListener('click', analyzeProfile);
 
   // Generate
   generateBtn.addEventListener('click', generateMessage);
@@ -714,22 +842,104 @@ function setupEventListeners() {
 function loadProfileData() {
   profileData = extractProfileData();
   updateProfileDisplay();
+
+  // Auto-analyze if enabled and not already analyzed
+  if (profileData && settingsState.autoFetchProfile && !profileAnalysis) {
+    analyzeProfile();
+  }
 }
 
 function updateProfileDisplay() {
-  const content = widget?.querySelector('#relavo-profile-content');
-  if (!content) return;
+  const nameEl = widget?.querySelector('#relavo-profile-name');
+  const analysisContent = widget?.querySelector('#relavo-analysis-content');
+  const analyzeBtn = widget?.querySelector('#relavo-analyze-btn') as HTMLElement;
+
+  if (!nameEl || !analysisContent) return;
 
   if (!profileData) {
-    content.innerHTML = '<p style="color: #dc2626;">Could not extract profile data. Make sure you\'re on a LinkedIn profile page.</p>';
+    nameEl.textContent = 'Could not load profile';
+    analysisContent.innerHTML = '<p class="relavo-analysis-error">Make sure you\'re on a LinkedIn profile page.</p>';
     return;
   }
 
-  content.innerHTML = `
-    <div class="profile-item"><span class="profile-label">Name:</span> ${profileData.name}</div>
-    ${profileData.headline ? `<div class="profile-item"><span class="profile-label">Headline:</span> ${profileData.headline}</div>` : ''}
-    ${profileData.location ? `<div class="profile-item"><span class="profile-label">Location:</span> ${profileData.location}</div>` : ''}
-  `;
+  nameEl.textContent = profileData.name;
+
+  // Update analysis section
+  if (isAnalyzing) {
+    analyzeBtn.classList.add('loading');
+    analysisContent.innerHTML = `
+      <div class="relavo-analysis-loading">
+        <div class="relavo-spinner" style="width: 14px; height: 14px; border-width: 2px;"></div>
+        Analyzing profile...
+      </div>
+    `;
+  } else if (profileAnalysis) {
+    analyzeBtn.classList.remove('loading');
+    const interestTags = profileAnalysis.interests
+      .map(interest => `<span class="relavo-interest-tag">${interest}</span>`)
+      .join('');
+
+    analysisContent.innerHTML = `
+      <div class="relavo-analysis-section">
+        <div class="relavo-analysis-label">Interests</div>
+        <div class="relavo-interests">${interestTags}</div>
+      </div>
+      <div class="relavo-analysis-section">
+        <div class="relavo-analysis-label">How to Connect</div>
+        <div class="relavo-alignment">${profileAnalysis.alignmentSuggestion}</div>
+      </div>
+    `;
+  } else {
+    analyzeBtn.classList.remove('loading');
+    analysisContent.innerHTML = `
+      <button class="relavo-analyze-btn" id="relavo-analyze-profile-btn">Analyze Profile</button>
+    `;
+    // Add click handler for the analyze button
+    const analyzeProfileBtn = widget?.querySelector('#relavo-analyze-profile-btn');
+    analyzeProfileBtn?.addEventListener('click', analyzeProfile);
+  }
+}
+
+function clearGeneratedMessage() {
+  const outputEl = widget?.querySelector('#relavo-message-output') as HTMLElement;
+  const messageText = widget?.querySelector('#relavo-message-text') as HTMLElement;
+  const errorEl = widget?.querySelector('#relavo-error') as HTMLElement;
+
+  if (outputEl) outputEl.classList.remove('visible');
+  if (messageText) messageText.textContent = '';
+  if (errorEl) errorEl.classList.remove('visible');
+}
+
+async function analyzeProfile() {
+  if (!profileData || isAnalyzing) return;
+
+  isAnalyzing = true;
+  updateProfileDisplay();
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'ANALYZE_PROFILE',
+      profileData,
+    });
+
+    if (response.error) {
+      profileAnalysis = null;
+      const analysisContent = widget?.querySelector('#relavo-analysis-content');
+      if (analysisContent) {
+        analysisContent.innerHTML = `<p class="relavo-analysis-error">${response.error}</p>`;
+      }
+    } else if (response.analysis) {
+      profileAnalysis = response.analysis;
+    }
+  } catch (error) {
+    const analysisContent = widget?.querySelector('#relavo-analysis-content');
+    if (analysisContent) {
+      analysisContent.innerHTML = '<p class="relavo-analysis-error">Failed to analyze. Check API key in extension settings.</p>';
+    }
+  } finally {
+    isAnalyzing = false;
+    updateProfileDisplay();
+  }
 }
 
 async function generateMessage() {
