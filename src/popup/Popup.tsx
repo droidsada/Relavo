@@ -1,32 +1,160 @@
 import { useState, useEffect } from 'react';
-import { Settings, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
-import { getStorageData, setStorageData } from '../shared/storage';
-import { getActiveTab } from '../shared/messaging';
-import { AVAILABLE_MODELS } from '../shared/types';
+import {
+  Settings,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  Edit3,
+  RotateCcw,
+} from 'lucide-react';
+import { getStorageData, setStorageData, setApiKey, setActiveProvider, resetSystemPrompts } from '../shared/storage';
+import { getActiveTab, requestProfileData } from '../shared/messaging';
+import {
+  AVAILABLE_MODELS,
+  DEFAULT_SYSTEM_PROMPTS,
+  type LLMProvider,
+  type ProfileData,
+  type ProfileAnalysis,
+  type StorageData,
+} from '../shared/types';
 
 export default function Popup() {
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('claude-sonnet-4-20250514');
+  // Settings state
+  const [storageData, setStorageDataState] = useState<StorageData | null>(null);
   const [isOnLinkedIn, setIsOnLinkedIn] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [isConfigExpanded, setIsConfigExpanded] = useState(true);
+  const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
+  const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
+  const [isApiKeysExpanded, setIsApiKeysExpanded] = useState(false);
+
+  // Profile analysis state
+  const [profileData, setProfileData] = useState<ProfileData | null>(null);
+  const [profileAnalysis, setProfileAnalysis] = useState<ProfileAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  // Editable prompts state
+  const [editedPrompts, setEditedPrompts] = useState({
+    profileAnalysis: '',
+    messageGeneration: '',
+  });
 
   useEffect(() => {
     async function initialize() {
-      const storedData = await getStorageData();
-      setApiKey(storedData.apiKey);
-      setModel(storedData.model || 'claude-sonnet-4-20250514');
-      // Collapse config by default if API key is already set
-      setIsConfigExpanded(!storedData.apiKey);
+      const data = await getStorageData();
+      setStorageDataState(data);
+      setEditedPrompts({
+        profileAnalysis: data.systemPrompts.profileAnalysis,
+        messageGeneration: data.systemPrompts.messageGeneration,
+      });
+
+      // Check if API key is configured - expand settings if not
+      const hasApiKey = data.apiKeys[data.activeProvider];
+      setIsSettingsExpanded(!hasApiKey);
 
       const tab = await getActiveTab();
-      setIsOnLinkedIn(tab?.url?.includes('linkedin.com/in/') || false);
+      const isProfile = tab?.url?.includes('linkedin.com/in/') || false;
+      setIsOnLinkedIn(isProfile);
+
+      // If on LinkedIn and auto-fetch is enabled, get profile data and analyze
+      if (isProfile && tab?.id) {
+        try {
+          const profile = await requestProfileData(tab.id);
+          if (profile) {
+            setProfileData(profile);
+            if (data.autoFetchProfile && hasApiKey) {
+              analyzeProfile(profile);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to get profile data:', err);
+        }
+      }
     }
     initialize();
   }, []);
 
-  const handleSave = async () => {
-    await setStorageData({ apiKey, model });
+  const analyzeProfile = async (profile: ProfileData) => {
+    if (!profile) return;
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'ANALYZE_PROFILE',
+        profileData: profile,
+      });
+
+      if (response.error) {
+        setAnalysisError(response.error);
+      } else if (response.analysis) {
+        setProfileAnalysis(response.analysis);
+      }
+    } catch (err) {
+      setAnalysisError('Failed to analyze profile');
+      console.error(err);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleProviderChange = async (provider: LLMProvider) => {
+    await setActiveProvider(provider);
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+    showSaved();
+  };
+
+  const handleApiKeyChange = async (provider: LLMProvider, key: string) => {
+    await setApiKey(provider, key);
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+  };
+
+  const handleModelChange = async (model: string) => {
+    await setStorageData({ model });
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+    showSaved();
+  };
+
+  const handleAutoFetchToggle = async () => {
+    if (!storageData) return;
+    await setStorageData({ autoFetchProfile: !storageData.autoFetchProfile });
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+    showSaved();
+  };
+
+  const handleSavePrompts = async () => {
+    await setStorageData({
+      systemPrompts: {
+        profileAnalysis: editedPrompts.profileAnalysis,
+        messageGeneration: editedPrompts.messageGeneration,
+      },
+    });
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+    setIsPromptsModalOpen(false);
+    showSaved();
+  };
+
+  const handleResetPrompts = async () => {
+    await resetSystemPrompts();
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+    setEditedPrompts({
+      profileAnalysis: DEFAULT_SYSTEM_PROMPTS.profileAnalysis,
+      messageGeneration: DEFAULT_SYSTEM_PROMPTS.messageGeneration,
+    });
+    showSaved();
+  };
+
+  const showSaved = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -35,25 +163,115 @@ export default function Popup() {
     chrome.tabs.create({ url: 'https://www.linkedin.com' });
   };
 
+  const handleRefreshAnalysis = () => {
+    if (profileData) {
+      analyzeProfile(profileData);
+    }
+  };
+
+  if (!storageData) {
+    return (
+      <div className="w-96 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
+        <div className="text-center text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  const currentProvider = storageData.activeProvider;
+  const currentApiKey = storageData.apiKeys[currentProvider] || '';
+  const availableModels = AVAILABLE_MODELS[currentProvider];
+
   return (
-    <div className="w-80 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
+    <div className="w-96 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 max-h-[600px] overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-          <span className="text-white font-bold text-sm">R</span>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-sm">R</span>
+          </div>
+          <div>
+            <h1 className="text-lg font-bold text-gray-900">Relavo</h1>
+            <p className="text-xs text-gray-500">LinkedIn AI Assistant</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">Relavo</h1>
-          <p className="text-xs text-gray-500">LinkedIn AI Assistant</p>
-        </div>
+        {saved && (
+          <span className="text-xs text-green-600 flex items-center gap-1">
+            <CheckCircle className="w-3 h-3" /> Saved
+          </span>
+        )}
       </div>
 
-      {/* Status */}
+      {/* Status / Profile Analysis */}
       {isOnLinkedIn ? (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-          <p className="text-sm text-green-800">
-            Widget is active on this LinkedIn profile. Drag it anywhere on the page!
-          </p>
+        <div className="bg-white rounded-lg border border-gray-200 p-3 mb-4">
+          {/* Profile Header */}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-green-500" />
+              <span className="text-sm font-medium text-gray-900">
+                {profileData?.name || 'Loading profile...'}
+              </span>
+            </div>
+            <button
+              onClick={handleRefreshAnalysis}
+              disabled={isAnalyzing}
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              title="Refresh analysis"
+            >
+              <RefreshCw className={`w-4 h-4 text-gray-500 ${isAnalyzing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {/* Analysis Content */}
+          {isAnalyzing ? (
+            <div className="text-sm text-gray-500 flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Analyzing profile...
+            </div>
+          ) : analysisError ? (
+            <div className="text-sm text-red-600 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {analysisError}
+            </div>
+          ) : profileAnalysis ? (
+            <>
+              {/* Interests */}
+              <div className="mb-3">
+                <p className="text-xs font-medium text-gray-500 mb-1">Interests</p>
+                <div className="flex flex-wrap gap-1">
+                  {profileAnalysis.interests.map((interest, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full"
+                    >
+                      {interest}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Alignment Suggestion */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-1">How to Align</p>
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  {profileAnalysis.alignmentSuggestion}
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-2">
+              <button
+                onClick={handleRefreshAnalysis}
+                disabled={!currentApiKey}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Analyze Profile
+              </button>
+              {!currentApiKey && (
+                <p className="text-xs text-gray-500 mt-2">Configure API key first</p>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
@@ -70,59 +288,52 @@ export default function Popup() {
         </div>
       )}
 
-      {/* Configuration - Collapsible */}
+      {/* Settings Panel - Collapsible */}
       <div className="bg-white rounded-lg border border-gray-200 mb-3">
         <button
-          onClick={() => setIsConfigExpanded(!isConfigExpanded)}
+          onClick={() => setIsSettingsExpanded(!isSettingsExpanded)}
           className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors"
         >
           <div className="flex items-center gap-2">
             <Settings className="w-4 h-4 text-gray-600" />
-            <h2 className="font-semibold text-gray-900 text-sm">API Configuration</h2>
+            <h2 className="font-semibold text-gray-900 text-sm">Settings</h2>
           </div>
-          {isConfigExpanded ? (
+          {isSettingsExpanded ? (
             <ChevronUp className="w-4 h-4 text-gray-500" />
           ) : (
             <ChevronDown className="w-4 h-4 text-gray-500" />
           )}
         </button>
 
-        {isConfigExpanded && (
-          <div className="px-4 pb-4 space-y-3">
+        {isSettingsExpanded && (
+          <div className="px-4 pb-4 space-y-4">
+            {/* Provider Selection */}
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">
-                Anthropic API Key
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-ant-..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Get your key at{' '}
-                <a
-                  href="https://console.anthropic.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline"
-                >
-                  console.anthropic.com
-                </a>
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                AI Model
+                AI Provider
               </label>
               <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
+                value={currentProvider}
+                onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               >
-                {AVAILABLE_MODELS.map((m) => (
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI (GPT-4)</option>
+                <option value="gemini">Google (Gemini)</option>
+              </select>
+            </div>
+
+            {/* Model Selection */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Model
+              </label>
+              <select
+                value={storageData.model}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                {availableModels.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
                   </option>
@@ -130,27 +341,191 @@ export default function Popup() {
               </select>
             </div>
 
-            <button
-              onClick={handleSave}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm"
-            >
-              {saved ? 'Saved!' : 'Save Settings'}
-            </button>
+            {/* API Keys Section */}
+            <div>
+              <button
+                onClick={() => setIsApiKeysExpanded(!isApiKeysExpanded)}
+                className="flex items-center justify-between w-full text-xs font-medium text-gray-700 mb-2"
+              >
+                <span>API Keys</span>
+                {isApiKeysExpanded ? (
+                  <ChevronUp className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+              </button>
+
+              {isApiKeysExpanded && (
+                <div className="space-y-3 pl-2 border-l-2 border-gray-200">
+                  {/* Anthropic Key */}
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Anthropic</label>
+                    <input
+                      type="password"
+                      value={storageData.apiKeys.anthropic || ''}
+                      onChange={(e) => handleApiKeyChange('anthropic', e.target.value)}
+                      placeholder="sk-ant-..."
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* OpenAI Key */}
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">OpenAI</label>
+                    <input
+                      type="password"
+                      value={storageData.apiKeys.openai || ''}
+                      onChange={(e) => handleApiKeyChange('openai', e.target.value)}
+                      placeholder="sk-..."
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* Gemini Key */}
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Gemini</label>
+                    <input
+                      type="password"
+                      value={storageData.apiKeys.gemini || ''}
+                      onChange={(e) => handleApiKeyChange('gemini', e.target.value)}
+                      placeholder="AIza..."
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <p className="text-xs text-gray-500">
+                    Get keys from{' '}
+                    <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      Anthropic
+                    </a>
+                    ,{' '}
+                    <a href="https://platform.openai.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      OpenAI
+                    </a>
+                    , or{' '}
+                    <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      Google AI
+                    </a>
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Auto-fetch Toggle */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-gray-700">Auto-analyze profiles</p>
+                <p className="text-xs text-gray-500">Automatically analyze when visiting profiles</p>
+              </div>
+              <button
+                onClick={handleAutoFetchToggle}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  storageData.autoFetchProfile ? 'bg-blue-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    storageData.autoFetchProfile ? 'translate-x-4.5' : 'translate-x-1'
+                  }`}
+                  style={{ transform: storageData.autoFetchProfile ? 'translateX(18px)' : 'translateX(2px)' }}
+                />
+              </button>
+            </div>
+
+            {/* System Prompts */}
+            <div>
+              <button
+                onClick={() => setIsPromptsModalOpen(true)}
+                className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800"
+              >
+                <Edit3 className="w-3 h-3" />
+                Edit System Prompts
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Info about widget settings */}
+      {/* Tips */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
         <p className="text-xs text-blue-800">
-          <strong>Tip:</strong> Business context and message tone can be adjusted directly in the widget using the gear icon.
+          <strong>Tip:</strong> The widget on LinkedIn profile pages lets you generate messages with customizable tone and relationship type.
         </p>
       </div>
 
       {/* Footer */}
       <p className="text-xs text-gray-500 text-center">
-        v1.0.0 - The widget appears on LinkedIn profile pages
+        v2.0.0 - Multi-vendor LLM support
       </p>
+
+      {/* System Prompts Modal */}
+      {isPromptsModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-4 w-[90%] max-w-lg max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">Edit System Prompts</h3>
+              <button
+                onClick={() => setIsPromptsModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Profile Analysis Prompt */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Profile Analysis Prompt
+                </label>
+                <textarea
+                  value={editedPrompts.profileAnalysis}
+                  onChange={(e) => setEditedPrompts({ ...editedPrompts, profileAnalysis: e.target.value })}
+                  rows={6}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono"
+                />
+              </div>
+
+              {/* Message Generation Prompt */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Message Generation Prompt
+                </label>
+                <textarea
+                  value={editedPrompts.messageGeneration}
+                  onChange={(e) => setEditedPrompts({ ...editedPrompts, messageGeneration: e.target.value })}
+                  rows={6}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={handleResetPrompts}
+                  className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset to Defaults
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setIsPromptsModalOpen(false)}
+                    className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSavePrompts}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg"
+                  >
+                    Save Prompts
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

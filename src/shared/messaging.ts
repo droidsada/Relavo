@@ -1,15 +1,17 @@
 import type {
   ExtensionMessage,
   ProfileData,
+  ProfileAnalysis,
   GenerateMessageResponse,
-  ProfileDataResponseMessage
+  ProfileDataResponseMessage,
+  AnalyzeProfileResponse,
 } from './types';
 
-export function sendMessageToBackground(
+export function sendMessageToBackground<T = ExtensionMessage>(
   message: ExtensionMessage
-): Promise<GenerateMessageResponse> {
+): Promise<T> {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(message, (response: GenerateMessageResponse) => {
+    chrome.runtime.sendMessage(message, (response: T) => {
       resolve(response);
     });
   });
@@ -40,14 +42,19 @@ export async function isLinkedInProfilePage(): Promise<boolean> {
   return tab.url.includes('linkedin.com/in/');
 }
 
-export async function requestProfileData(): Promise<ProfileData | null> {
-  const tab = await getActiveTab();
-  if (!tab?.id || !tab.url?.includes('linkedin.com/in/')) {
-    return null;
+export async function requestProfileData(tabId?: number): Promise<ProfileData | null> {
+  let targetTabId = tabId;
+
+  if (!targetTabId) {
+    const tab = await getActiveTab();
+    if (!tab?.id || !tab.url?.includes('linkedin.com/in/')) {
+      return null;
+    }
+    targetTabId = tab.id;
   }
 
   try {
-    const response = await sendMessageToContentScript(tab.id, { type: 'GET_PROFILE_DATA' });
+    const response = await sendMessageToContentScript(targetTabId, { type: 'GET_PROFILE_DATA' });
     return response?.data || null;
   } catch (error) {
     console.error('Error getting profile data:', error);
@@ -55,16 +62,38 @@ export async function requestProfileData(): Promise<ProfileData | null> {
   }
 }
 
+export async function requestProfileAnalysis(
+  profileData: ProfileData
+): Promise<{ analysis?: ProfileAnalysis; error?: string }> {
+  const response = await sendMessageToBackground<AnalyzeProfileResponse>({
+    type: 'ANALYZE_PROFILE',
+    profileData,
+  });
+
+  return {
+    analysis: response?.analysis,
+    error: response?.error,
+  };
+}
+
 export async function requestMessageGeneration(
   profileData: ProfileData,
-  businessContext: string,
-  tone: string
+  options: {
+    vibe: string;
+    relationship: string;
+    customContext: string;
+    businessContext?: string;
+    profileAnalysis?: ProfileAnalysis;
+  }
 ): Promise<{ message?: string; error?: string }> {
-  const response = await sendMessageToBackground({
+  const response = await sendMessageToBackground<GenerateMessageResponse>({
     type: 'GENERATE_MESSAGE',
     profileData,
-    businessContext,
-    tone,
+    profileAnalysis: options.profileAnalysis,
+    vibe: options.vibe,
+    relationship: options.relationship,
+    customContext: options.customContext,
+    businessContext: options.businessContext,
   });
 
   return {

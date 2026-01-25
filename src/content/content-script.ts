@@ -2,6 +2,7 @@ import type {
   ExtensionMessage,
   ProfileData,
   ProfileDataResponseMessage,
+  ProfileAnalysis,
   StorageData,
 } from '../shared/types';
 
@@ -11,8 +12,8 @@ const styles = `
     position: fixed;
     top: 100px;
     right: 20px;
-    width: 350px;
-    min-width: 280px;
+    width: 380px;
+    min-width: 320px;
     min-height: 200px;
     background: linear-gradient(135deg, #f0f4ff 0%, #e8eeff 100%);
     border-radius: 12px;
@@ -100,20 +101,88 @@ const styles = `
     color: #334155;
   }
 
-  #relavo-profile .experience-list {
-    margin: 4px 0 0 12px;
-    padding: 0;
-    list-style: none;
+  /* Chip Styles */
+  .relavo-chip-section {
+    background: white;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid #e2e8f0;
   }
 
-  #relavo-profile .experience-list li {
-    margin-bottom: 2px;
+  .relavo-chip-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    color: #1e293b;
+  }
+
+  .relavo-chip-group {
+    margin-bottom: 10px;
+  }
+
+  .relavo-chip-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .relavo-chip-group label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
     color: #64748b;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
   }
 
-  #relavo-profile .experience-list li::before {
-    content: "•";
-    margin-right: 6px;
+  .relavo-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .relavo-chip {
+    padding: 6px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    background: white;
+    color: #475569;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .relavo-chip:hover {
+    border-color: #3b82f6;
+    color: #3b82f6;
+  }
+
+  .relavo-chip.selected {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: white;
+  }
+
+  /* Custom Context */
+  .relavo-context-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 60px;
+    color: #334155;
+    margin-top: 8px;
+  }
+
+  .relavo-context-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  }
+
+  .relavo-context-input::placeholder {
     color: #94a3b8;
   }
 
@@ -122,7 +191,7 @@ const styles = `
     background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     color: white;
     border: none;
-    padding: 10px 16px;
+    padding: 12px 16px;
     border-radius: 8px;
     font-size: 13px;
     font-weight: 600;
@@ -306,23 +375,6 @@ const styles = `
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
   }
 
-  .relavo-setting-group select {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    font-size: 12px;
-    color: #334155;
-    background: white;
-    cursor: pointer;
-  }
-
-  .relavo-setting-group select:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-  }
-
   #relavo-settings-toggle {
     background: rgba(255, 255, 255, 0.2);
     border: none;
@@ -363,10 +415,13 @@ let widget: HTMLElement | null = null;
 let isDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let profileData: ProfileData | null = null;
+let profileAnalysis: ProfileAnalysis | null = null;
 let lastUrl = location.href;
-let settingsState: { businessContext: string; tone: string } = {
+let settingsState: { businessContext: string; vibe: string; relationship: string; customContext: string } = {
   businessContext: '',
-  tone: 'professional',
+  vibe: 'professional',
+  relationship: 'cold',
+  customContext: '',
 };
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -416,6 +471,8 @@ function handleUrlChange() {
   } else if (!isProfile && widget) {
     removeWidget();
   } else if (isProfile && widget) {
+    // Reset for new profile
+    profileAnalysis = null;
     loadProfileData();
   }
 }
@@ -429,9 +486,11 @@ function removeWidget() {
 
 async function loadSettingsFromStorage() {
   return new Promise<void>((resolve) => {
-    chrome.storage.sync.get(['businessContext', 'tone'], (result) => {
-      settingsState.businessContext = (result as StorageData).businessContext || '';
-      settingsState.tone = (result as StorageData).tone || 'professional';
+    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship'], (result) => {
+      const data = result as Partial<StorageData>;
+      settingsState.businessContext = data.businessContext || '';
+      settingsState.vibe = data.defaultVibe || 'professional';
+      settingsState.relationship = data.defaultRelationship || 'cold';
       resolve();
     });
   });
@@ -444,7 +503,8 @@ function saveSettingsToStorage() {
   saveDebounceTimer = setTimeout(() => {
     chrome.storage.sync.set({
       businessContext: settingsState.businessContext,
-      tone: settingsState.tone,
+      defaultVibe: settingsState.vibe,
+      defaultRelationship: settingsState.relationship,
     });
     showSettingsSaved();
   }, 500);
@@ -471,45 +531,72 @@ async function createWidget() {
     <div id="relavo-header">
       <h3>Relavo</h3>
       <div id="relavo-header-buttons">
-        <button id="relavo-settings-toggle" title="Settings">⚙</button>
-        <button id="relavo-refresh" title="Refresh profile data">↻</button>
-        <button id="relavo-minimize" title="Minimize">−</button>
-        <button id="relavo-close" title="Close">×</button>
+        <button id="relavo-settings-toggle" title="Settings">&#9881;</button>
+        <button id="relavo-refresh" title="Refresh profile data">&#8635;</button>
+        <button id="relavo-minimize" title="Minimize">&minus;</button>
+        <button id="relavo-close" title="Close">&times;</button>
       </div>
     </div>
     <div id="relavo-content">
       <div id="relavo-settings-panel">
-        <h4>⚙ Message Settings</h4>
+        <h4>&#9881; Business Context</h4>
         <div class="relavo-setting-group">
-          <label for="relavo-business-context">Your Business Context</label>
+          <label for="relavo-business-context">About You/Your Business</label>
           <textarea
             id="relavo-business-context"
             placeholder="e.g., I help B2B SaaS companies optimize their marketing..."
             rows="2"
           >${settingsState.businessContext}</textarea>
         </div>
-        <div class="relavo-setting-group">
-          <label for="relavo-tone">Message Tone</label>
-          <select id="relavo-tone">
-            <option value="professional" ${settingsState.tone === 'professional' ? 'selected' : ''}>Professional</option>
-            <option value="friendly" ${settingsState.tone === 'friendly' ? 'selected' : ''}>Friendly</option>
-            <option value="casual" ${settingsState.tone === 'casual' ? 'selected' : ''}>Casual</option>
-            <option value="enthusiastic" ${settingsState.tone === 'enthusiastic' ? 'selected' : ''}>Enthusiastic</option>
-          </select>
-        </div>
-        <div class="relavo-settings-saved">✓ Settings saved</div>
+        <div class="relavo-settings-saved">&#10003; Settings saved</div>
       </div>
+
       <div id="relavo-profile">
-        <h4>Profile Data</h4>
+        <h4>Profile</h4>
         <div id="relavo-profile-content">Loading...</div>
       </div>
+
+      <div class="relavo-chip-section">
+        <h4>Message Options</h4>
+
+        <div class="relavo-chip-group">
+          <label>Vibe</label>
+          <div class="relavo-chips" id="relavo-vibe-chips">
+            <button class="relavo-chip ${settingsState.vibe === 'casual' ? 'selected' : ''}" data-vibe="casual">Casual</button>
+            <button class="relavo-chip ${settingsState.vibe === 'professional' ? 'selected' : ''}" data-vibe="professional">Professional</button>
+            <button class="relavo-chip ${settingsState.vibe === 'enthusiastic' ? 'selected' : ''}" data-vibe="enthusiastic">Enthusiastic</button>
+            <button class="relavo-chip ${settingsState.vibe === 'friendly' ? 'selected' : ''}" data-vibe="friendly">Friendly</button>
+          </div>
+        </div>
+
+        <div class="relavo-chip-group">
+          <label>Relationship</label>
+          <div class="relavo-chips" id="relavo-relationship-chips">
+            <button class="relavo-chip ${settingsState.relationship === 'cold' ? 'selected' : ''}" data-rel="cold">Cold Outreach</button>
+            <button class="relavo-chip ${settingsState.relationship === 'met-before' ? 'selected' : ''}" data-rel="met-before">Met Before</button>
+            <button class="relavo-chip ${settingsState.relationship === 'referral' ? 'selected' : ''}" data-rel="referral">Referral</button>
+            <button class="relavo-chip ${settingsState.relationship === 'mutual-connection' ? 'selected' : ''}" data-rel="mutual-connection">Mutual Connection</button>
+          </div>
+        </div>
+
+        <div class="relavo-chip-group">
+          <label>Custom Context (optional)</label>
+          <textarea
+            class="relavo-context-input"
+            id="relavo-custom-context"
+            placeholder="Add specific details about why you're reaching out..."
+            rows="2"
+          ></textarea>
+        </div>
+      </div>
+
       <button id="relavo-generate-btn">Generate Message</button>
       <div id="relavo-error"></div>
       <div id="relavo-message-output">
         <div class="message-header">
           <h4>Your Message</h4>
           <button id="relavo-copy-btn">
-            <span>📋</span> Copy
+            <span>&#128203;</span> Copy
           </button>
         </div>
         <div id="relavo-message-text"></div>
@@ -535,7 +622,9 @@ function setupEventListeners() {
   const settingsToggle = widget.querySelector('#relavo-settings-toggle') as HTMLElement;
   const settingsPanel = widget.querySelector('#relavo-settings-panel') as HTMLElement;
   const businessContextInput = widget.querySelector('#relavo-business-context') as HTMLTextAreaElement;
-  const toneSelect = widget.querySelector('#relavo-tone') as HTMLSelectElement;
+  const customContextInput = widget.querySelector('#relavo-custom-context') as HTMLTextAreaElement;
+  const vibeChips = widget.querySelectorAll('#relavo-vibe-chips .relavo-chip');
+  const relationshipChips = widget.querySelectorAll('#relavo-relationship-chips .relavo-chip');
 
   // Dragging
   header.addEventListener('mousedown', (e) => {
@@ -587,10 +676,29 @@ function setupEventListeners() {
     saveSettingsToStorage();
   });
 
-  // Tone change
-  toneSelect.addEventListener('change', () => {
-    settingsState.tone = toneSelect.value;
-    saveSettingsToStorage();
+  // Custom context change (no save to storage, per-session)
+  customContextInput.addEventListener('input', () => {
+    settingsState.customContext = customContextInput.value;
+  });
+
+  // Vibe chip selection
+  vibeChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      vibeChips.forEach((c) => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      settingsState.vibe = chip.getAttribute('data-vibe') || 'professional';
+      saveSettingsToStorage();
+    });
+  });
+
+  // Relationship chip selection
+  relationshipChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      relationshipChips.forEach((c) => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      settingsState.relationship = chip.getAttribute('data-rel') || 'cold';
+      saveSettingsToStorage();
+    });
   });
 
   // Refresh
@@ -617,16 +725,10 @@ function updateProfileDisplay() {
     return;
   }
 
-  const experienceHtml = profileData.experience.length > 0
-    ? `<ul class="experience-list">${profileData.experience.slice(0, 3).map(exp => `<li>${exp}</li>`).join('')}</ul>`
-    : '<span style="color: #94a3b8;">Not available</span>';
-
   content.innerHTML = `
     <div class="profile-item"><span class="profile-label">Name:</span> ${profileData.name}</div>
     ${profileData.headline ? `<div class="profile-item"><span class="profile-label">Headline:</span> ${profileData.headline}</div>` : ''}
     ${profileData.location ? `<div class="profile-item"><span class="profile-label">Location:</span> ${profileData.location}</div>` : ''}
-    ${profileData.about ? `<div class="profile-item"><span class="profile-label">About:</span> ${profileData.about.length > 100 ? profileData.about.substring(0, 100) + '...' : profileData.about}</div>` : ''}
-    <div class="profile-item"><span class="profile-label">Experience:</span>${experienceHtml}</div>
   `;
 }
 
@@ -649,8 +751,11 @@ async function generateMessage() {
     const response = await chrome.runtime.sendMessage({
       type: 'GENERATE_MESSAGE',
       profileData,
+      profileAnalysis,
+      vibe: settingsState.vibe,
+      relationship: settingsState.relationship,
+      customContext: settingsState.customContext,
       businessContext: settingsState.businessContext,
-      tone: settingsState.tone,
     });
 
     if (response.error) {
@@ -682,9 +787,9 @@ function copyMessage() {
 
   if (messageText?.textContent) {
     navigator.clipboard.writeText(messageText.textContent);
-    copyBtn.innerHTML = '<span>✓</span> Copied!';
+    copyBtn.innerHTML = '<span>&#10003;</span> Copied!';
     setTimeout(() => {
-      copyBtn.innerHTML = '<span>📋</span> Copy';
+      copyBtn.innerHTML = '<span>&#128203;</span> Copy';
     }, 2000);
   }
 }
@@ -845,4 +950,4 @@ if (isLinkedInProfileUrl(location.href)) {
   createWidget();
 }
 
-console.log('Relavo content script loaded');
+console.log('Relavo content script loaded - v2.0.0');
