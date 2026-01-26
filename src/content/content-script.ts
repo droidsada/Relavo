@@ -518,6 +518,7 @@ let settingsState: {
   relationships: ['cold', 'met-before', 'referral', 'mutual-connection'],
 };
 let isAnalyzing = false;
+let isLoadingProfile = false;
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function injectStyles() {
@@ -574,10 +575,17 @@ function handleUrlChange() {
     removeWidget();
   } else if (isProfile && widget) {
     // Reset for new profile
+    profileData = null;
     profileAnalysis = null;
     isAnalyzing = false;
+    isLoadingProfile = true;
     clearGeneratedMessage();
-    loadProfileData();
+    updateProfileDisplay(); // Show loading state immediately
+
+    // Wait for LinkedIn to load new profile content before extracting
+    setTimeout(() => {
+      loadProfileData();
+    }, 800);
   }
 }
 
@@ -870,6 +878,7 @@ function setupEventListeners() {
 
 function loadProfileData() {
   profileData = extractProfileData();
+  isLoadingProfile = false;
   updateProfileDisplay();
 
   // Auto-analyze if enabled and not already analyzed
@@ -886,8 +895,13 @@ function updateProfileDisplay() {
   if (!nameEl || !analysisContent) return;
 
   if (!profileData) {
-    nameEl.textContent = 'Could not load profile';
-    analysisContent.innerHTML = '<p class="relavo-analysis-error">Make sure you\'re on a LinkedIn profile page.</p>';
+    if (isLoadingProfile) {
+      nameEl.textContent = 'Loading...';
+      analysisContent.innerHTML = '';
+    } else {
+      nameEl.textContent = 'Could not load profile';
+      analysisContent.innerHTML = '<p class="relavo-analysis-error">Make sure you\'re on a LinkedIn profile page.</p>';
+    }
     return;
   }
 
