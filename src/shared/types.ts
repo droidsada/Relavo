@@ -15,6 +15,11 @@ export interface SystemPrompts {
   messageGeneration: string;
 }
 
+export interface MessageOptions {
+  vibes: string[];
+  relationships: string[];
+}
+
 // Profile Data Types
 export interface ProfileData {
   name: string;
@@ -43,6 +48,9 @@ export interface StorageData {
   // Prompts
   systemPrompts: SystemPrompts;
 
+  // Message Options (customizable vibes and relationships)
+  messageOptions: MessageOptions;
+
   // Message Generation Defaults
   businessContext: string;
   defaultVibe: string;
@@ -65,14 +73,11 @@ export const AVAILABLE_MODELS: Record<LLMProvider, Array<{ id: string; name: str
   ],
 };
 
-// Message Options for Chips
-export const MESSAGE_OPTIONS = {
-  vibes: ['casual', 'professional', 'enthusiastic', 'friendly'] as const,
-  relationships: ['cold', 'met-before', 'referral', 'mutual-connection'] as const,
-} as const;
-
-export type MessageVibe = (typeof MESSAGE_OPTIONS.vibes)[number];
-export type MessageRelationship = (typeof MESSAGE_OPTIONS.relationships)[number];
+// Default Message Options
+export const DEFAULT_MESSAGE_OPTIONS: MessageOptions = {
+  vibes: ['casual', 'professional', 'enthusiastic', 'friendly'],
+  relationships: ['cold', 'met-before', 'referral', 'mutual-connection'],
+};
 
 // Default System Prompts
 export const DEFAULT_SYSTEM_PROMPTS: SystemPrompts = {

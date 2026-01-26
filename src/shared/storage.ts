@@ -1,5 +1,5 @@
-import type { StorageData, LLMProvider, ApiKeys, SystemPrompts, WidgetPosition } from './types';
-import { DEFAULT_SYSTEM_PROMPTS, AVAILABLE_MODELS } from './types';
+import type { StorageData, LLMProvider, ApiKeys, SystemPrompts, WidgetPosition, MessageOptions } from './types';
+import { DEFAULT_SYSTEM_PROMPTS, DEFAULT_MESSAGE_OPTIONS, AVAILABLE_MODELS } from './types';
 
 const DEFAULT_STORAGE: StorageData = {
   // API Configuration
@@ -13,6 +13,9 @@ const DEFAULT_STORAGE: StorageData = {
 
   // Prompts
   systemPrompts: DEFAULT_SYSTEM_PROMPTS,
+
+  // Message Options
+  messageOptions: DEFAULT_MESSAGE_OPTIONS,
 
   // Message Generation Defaults
   businessContext: '',
@@ -28,6 +31,7 @@ export async function getStorageData(): Promise<StorageData> {
       // Ensure nested objects are properly merged
       merged.apiKeys = { ...DEFAULT_STORAGE.apiKeys, ...result.apiKeys };
       merged.systemPrompts = { ...DEFAULT_STORAGE.systemPrompts, ...result.systemPrompts };
+      merged.messageOptions = { ...DEFAULT_STORAGE.messageOptions, ...result.messageOptions };
       resolve(merged as StorageData);
     });
   });
@@ -115,6 +119,20 @@ export async function setSystemPrompts(prompts: Partial<SystemPrompts>): Promise
 
 export async function resetSystemPrompts(): Promise<void> {
   await setStorageData({ systemPrompts: DEFAULT_SYSTEM_PROMPTS });
+}
+
+// Message Options
+export async function getMessageOptions(): Promise<MessageOptions> {
+  const data = await getStorageData();
+  return data.messageOptions;
+}
+
+export async function setMessageOptions(options: MessageOptions): Promise<void> {
+  await setStorageData({ messageOptions: options });
+}
+
+export async function resetMessageOptions(): Promise<void> {
+  await setStorageData({ messageOptions: DEFAULT_MESSAGE_OPTIONS });
 }
 
 // Business Context

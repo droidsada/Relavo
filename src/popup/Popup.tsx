@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
 import {
-  Settings,
   ExternalLink,
-  ChevronDown,
-  ChevronUp,
   CheckCircle,
-  Edit3,
   RotateCcw,
+  Key,
+  MessageSquare,
+  Sliders,
 } from 'lucide-react';
-import { getStorageData, setStorageData, setApiKey, setActiveProvider, resetSystemPrompts } from '../shared/storage';
+import { getStorageData, setStorageData, setApiKey, setActiveProvider, resetSystemPrompts, resetMessageOptions } from '../shared/storage';
 import { getActiveTab } from '../shared/messaging';
 import {
   AVAILABLE_MODELS,
   DEFAULT_SYSTEM_PROMPTS,
+  DEFAULT_MESSAGE_OPTIONS,
   type LLMProvider,
   type StorageData,
   type WidgetPosition,
@@ -23,14 +23,20 @@ export default function Popup() {
   const [storageData, setStorageDataState] = useState<StorageData | null>(null);
   const [isOnLinkedIn, setIsOnLinkedIn] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [isSettingsExpanded, setIsSettingsExpanded] = useState(false);
-  const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
-  const [isApiKeysExpanded, setIsApiKeysExpanded] = useState(false);
 
-  // Editable prompts state
+  // Modal states
+  const [isApiKeysModalOpen, setIsApiKeysModalOpen] = useState(false);
+  const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
+  const [isMessageOptionsModalOpen, setIsMessageOptionsModalOpen] = useState(false);
+
+  // Editable states for modals
   const [editedPrompts, setEditedPrompts] = useState({
     profileAnalysis: '',
     messageGeneration: '',
+  });
+  const [editedMessageOptions, setEditedMessageOptions] = useState({
+    vibes: '',
+    relationships: '',
   });
 
   useEffect(() => {
@@ -41,10 +47,16 @@ export default function Popup() {
         profileAnalysis: data.systemPrompts.profileAnalysis,
         messageGeneration: data.systemPrompts.messageGeneration,
       });
+      setEditedMessageOptions({
+        vibes: data.messageOptions.vibes.join(', '),
+        relationships: data.messageOptions.relationships.join(', '),
+      });
 
-      // Check if API key is configured - expand settings if not
+      // Check if API key is configured - open modal if not
       const hasApiKey = data.apiKeys[data.activeProvider];
-      setIsSettingsExpanded(!hasApiKey);
+      if (!hasApiKey) {
+        setIsApiKeysModalOpen(true);
+      }
 
       const tab = await getActiveTab();
       const isProfile = tab?.url?.includes('linkedin.com/in/') || false;
@@ -112,6 +124,30 @@ export default function Popup() {
     showSaved();
   };
 
+  const handleSaveMessageOptions = async () => {
+    const vibes = editedMessageOptions.vibes.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    const relationships = editedMessageOptions.relationships.split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+    await setStorageData({
+      messageOptions: { vibes, relationships },
+    });
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+    setIsMessageOptionsModalOpen(false);
+    showSaved();
+  };
+
+  const handleResetMessageOptions = async () => {
+    await resetMessageOptions();
+    const updated = await getStorageData();
+    setStorageDataState(updated);
+    setEditedMessageOptions({
+      vibes: DEFAULT_MESSAGE_OPTIONS.vibes.join(', '),
+      relationships: DEFAULT_MESSAGE_OPTIONS.relationships.join(', '),
+    });
+    showSaved();
+  };
+
   const showSaved = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -130,6 +166,7 @@ export default function Popup() {
   }
 
   const currentProvider = storageData.activeProvider;
+  const currentApiKey = storageData.apiKeys[currentProvider];
   const availableModels = AVAILABLE_MODELS[currentProvider];
 
   return (
@@ -158,7 +195,7 @@ export default function Popup() {
           <div className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-green-500" />
             <p className="text-sm text-green-800">
-              You're on a LinkedIn profile. Use the Relavo widget on the page to analyze and generate messages.
+              You're on a LinkedIn profile. Use the Relavo widget on the page.
             </p>
           </div>
         </div>
@@ -177,239 +214,308 @@ export default function Popup() {
         </div>
       )}
 
-      {/* Settings Panel - Collapsible */}
-      <div className="bg-white rounded-lg border border-gray-200 mb-3">
-        <button
-          onClick={() => setIsSettingsExpanded(!isSettingsExpanded)}
-          className="w-full flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors"
-        >
+      {/* AI Provider Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-3">
+        <h2 className="font-semibold text-gray-900 text-sm mb-3">AI Provider</h2>
+
+        {/* Provider Selection */}
+        <div className="mb-3">
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            Provider
+          </label>
+          <select
+            value={currentProvider}
+            onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (GPT-4)</option>
+            <option value="gemini">Google (Gemini)</option>
+          </select>
+        </div>
+
+        {/* Model Selection */}
+        <div className="mb-3">
+          <label className="block text-xs font-medium text-gray-700 mb-1">
+            Model
+          </label>
+          <select
+            value={storageData.model}
+            onChange={(e) => handleModelChange(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+          >
+            {availableModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* API Key Status & Button */}
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Settings className="w-4 h-4 text-gray-600" />
-            <h2 className="font-semibold text-gray-900 text-sm">Settings</h2>
+            <span className={`w-2 h-2 rounded-full ${currentApiKey ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-xs text-gray-600">
+              {currentApiKey ? 'API Key configured' : 'API Key required'}
+            </span>
           </div>
-          {isSettingsExpanded ? (
-            <ChevronUp className="w-4 h-4 text-gray-500" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-gray-500" />
-          )}
-        </button>
-
-        {isSettingsExpanded && (
-          <div className="px-4 pb-4 space-y-4">
-            {/* Provider Selection */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                AI Provider
-              </label>
-              <select
-                value={currentProvider}
-                onChange={(e) => handleProviderChange(e.target.value as LLMProvider)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openai">OpenAI (GPT-4)</option>
-                <option value="gemini">Google (Gemini)</option>
-              </select>
-            </div>
-
-            {/* Model Selection */}
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Model
-              </label>
-              <select
-                value={storageData.model}
-                onChange={(e) => handleModelChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-              >
-                {availableModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* API Keys Section */}
-            <div>
-              <button
-                onClick={() => setIsApiKeysExpanded(!isApiKeysExpanded)}
-                className="flex items-center justify-between w-full text-xs font-medium text-gray-700 mb-2"
-              >
-                <span>API Keys</span>
-                {isApiKeysExpanded ? (
-                  <ChevronUp className="w-3 h-3" />
-                ) : (
-                  <ChevronDown className="w-3 h-3" />
-                )}
-              </button>
-
-              {isApiKeysExpanded && (
-                <div className="space-y-3 pl-2 border-l-2 border-gray-200">
-                  {/* Anthropic Key */}
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Anthropic</label>
-                    <input
-                      type="password"
-                      value={storageData.apiKeys.anthropic || ''}
-                      onChange={(e) => handleApiKeyChange('anthropic', e.target.value)}
-                      placeholder="sk-ant-..."
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* OpenAI Key */}
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">OpenAI</label>
-                    <input
-                      type="password"
-                      value={storageData.apiKeys.openai || ''}
-                      onChange={(e) => handleApiKeyChange('openai', e.target.value)}
-                      placeholder="sk-..."
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* Gemini Key */}
-                  <div>
-                    <label className="block text-xs text-gray-600 mb-1">Gemini</label>
-                    <input
-                      type="password"
-                      value={storageData.apiKeys.gemini || ''}
-                      onChange={(e) => handleApiKeyChange('gemini', e.target.value)}
-                      placeholder="AIza..."
-                      className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <p className="text-xs text-gray-500">
-                    Get keys from{' '}
-                    <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                      Anthropic
-                    </a>
-                    ,{' '}
-                    <a href="https://platform.openai.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                      OpenAI
-                    </a>
-                    , or{' '}
-                    <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                      Google AI
-                    </a>
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Auto-analyze Toggle */}
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium text-gray-700">Auto-analyze profiles</p>
-                <p className="text-xs text-gray-500">Automatically analyze when visiting profiles</p>
-              </div>
-              <button
-                onClick={handleAutoFetchToggle}
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  storageData.autoFetchProfile ? 'bg-blue-600' : 'bg-gray-300'
-                }`}
-              >
-                <span
-                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                    storageData.autoFetchProfile ? 'translate-x-4.5' : 'translate-x-1'
-                  }`}
-                  style={{ transform: storageData.autoFetchProfile ? 'translateX(18px)' : 'translateX(2px)' }}
-                />
-              </button>
-            </div>
-
-            {/* Widget Position */}
-            <div>
-              <p className="text-xs font-medium text-gray-700 mb-2">Widget Position</p>
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  onClick={() => handleWidgetPositionChange('top-left')}
-                  className={`p-2 rounded text-xs font-medium transition-colors ${
-                    storageData.widgetPosition === 'top-left'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  ↖ TL
-                </button>
-                <button
-                  onClick={() => handleWidgetPositionChange('top-right')}
-                  className={`p-2 rounded text-xs font-medium transition-colors ${
-                    storageData.widgetPosition === 'top-right'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  ↗ TR
-                </button>
-                <button
-                  onClick={() => handleWidgetPositionChange('bottom-left')}
-                  className={`p-2 rounded text-xs font-medium transition-colors ${
-                    storageData.widgetPosition === 'bottom-left'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  ↙ BL
-                </button>
-                <button
-                  onClick={() => handleWidgetPositionChange('bottom-right')}
-                  className={`p-2 rounded text-xs font-medium transition-colors ${
-                    storageData.widgetPosition === 'bottom-right'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  ↘ BR
-                </button>
-              </div>
-            </div>
-
-            {/* System Prompts */}
-            <div>
-              <button
-                onClick={() => setIsPromptsModalOpen(true)}
-                className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-800"
-              >
-                <Edit3 className="w-3 h-3" />
-                Edit System Prompts
-              </button>
-            </div>
-          </div>
-        )}
+          <button
+            onClick={() => setIsApiKeysModalOpen(true)}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+          >
+            <Key className="w-3 h-3" />
+            Configure
+          </button>
+        </div>
       </div>
 
-      {/* Tips */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-        <p className="text-xs text-blue-800">
-          <strong>Tip:</strong> The widget on LinkedIn profile pages lets you analyze profiles and generate personalized messages.
-        </p>
+      {/* Widget Settings Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-3">
+        <h2 className="font-semibold text-gray-900 text-sm mb-3">Widget Settings</h2>
+
+        {/* Auto-analyze Toggle */}
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-xs font-medium text-gray-700">Auto-analyze profiles</p>
+            <p className="text-xs text-gray-500">Analyze when visiting profiles</p>
+          </div>
+          <button
+            onClick={handleAutoFetchToggle}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              storageData.autoFetchProfile ? 'bg-blue-600' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
+              style={{ transform: storageData.autoFetchProfile ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </button>
+        </div>
+
+        {/* Widget Position */}
+        <div>
+          <p className="text-xs font-medium text-gray-700 mb-2">Widget Position</p>
+          <div className="grid grid-cols-4 gap-1">
+            {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as WidgetPosition[]).map((pos) => (
+              <button
+                key={pos}
+                onClick={() => handleWidgetPositionChange(pos)}
+                className={`p-2 rounded text-xs font-medium transition-colors ${
+                  storageData.widgetPosition === pos
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {pos === 'top-left' && '↖'}
+                {pos === 'top-right' && '↗'}
+                {pos === 'bottom-left' && '↙'}
+                {pos === 'bottom-right' && '↘'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Customization Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4 mb-3">
+        <h2 className="font-semibold text-gray-900 text-sm mb-3">Customization</h2>
+
+        <div className="space-y-2">
+          <button
+            onClick={() => setIsMessageOptionsModalOpen(true)}
+            className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-gray-500" />
+              <span className="text-sm text-gray-700">Message Options</span>
+            </div>
+            <span className="text-xs text-gray-400">Vibes & Relationships</span>
+          </button>
+
+          <button
+            onClick={() => setIsPromptsModalOpen(true)}
+            className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-gray-500" />
+              <span className="text-sm text-gray-700">System Prompts</span>
+            </div>
+            <span className="text-xs text-gray-400">AI Instructions</span>
+          </button>
+        </div>
       </div>
 
       {/* Footer */}
       <p className="text-xs text-gray-500 text-center">
-        v2.0.0 - Multi-vendor LLM support
+        v2.1.0 - Customizable message options
       </p>
 
-      {/* System Prompts Modal */}
-      {isPromptsModalOpen && (
+      {/* API Keys Modal */}
+      {isApiKeysModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-4 w-[90%] max-w-lg max-h-[80vh] overflow-y-auto">
+          <div className="bg-white rounded-lg p-4 w-[90%] max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">Edit System Prompts</h3>
+              <h3 className="font-semibold text-gray-900">API Keys</h3>
               <button
-                onClick={() => setIsPromptsModalOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
+                onClick={() => setIsApiKeysModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl"
               >
                 ×
               </button>
             </div>
 
             <div className="space-y-4">
-              {/* Profile Analysis Prompt */}
+              {/* Anthropic Key */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Anthropic</label>
+                <input
+                  type="password"
+                  value={storageData.apiKeys.anthropic || ''}
+                  onChange={(e) => handleApiKeyChange('anthropic', e.target.value)}
+                  placeholder="sk-ant-..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* OpenAI Key */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">OpenAI</label>
+                <input
+                  type="password"
+                  value={storageData.apiKeys.openai || ''}
+                  onChange={(e) => handleApiKeyChange('openai', e.target.value)}
+                  placeholder="sk-..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Gemini Key */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Gemini</label>
+                <input
+                  type="password"
+                  value={storageData.apiKeys.gemini || ''}
+                  onChange={(e) => handleApiKeyChange('gemini', e.target.value)}
+                  placeholder="AIza..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <p className="text-xs text-gray-500">
+                Get keys from{' '}
+                <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  Anthropic
+                </a>
+                ,{' '}
+                <a href="https://platform.openai.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  OpenAI
+                </a>
+                , or{' '}
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                  Google AI
+                </a>
+              </p>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => setIsApiKeysModalOpen(false)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Message Options Modal */}
+      {isMessageOptionsModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-4 w-[90%] max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">Message Options</h3>
+              <button
+                onClick={() => setIsMessageOptionsModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Vibes (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={editedMessageOptions.vibes}
+                  onChange={(e) => setEditedMessageOptions({ ...editedMessageOptions, vibes: e.target.value })}
+                  placeholder="casual, professional, enthusiastic, friendly"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Tone options for generated messages</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Relationships (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={editedMessageOptions.relationships}
+                  onChange={(e) => setEditedMessageOptions({ ...editedMessageOptions, relationships: e.target.value })}
+                  placeholder="cold, met-before, referral, mutual-connection"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Relationship types for context</p>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={handleResetMessageOptions}
+                  className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset to Defaults
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setIsMessageOptionsModalOpen(false)}
+                    className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveMessageOptions}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* System Prompts Modal */}
+      {isPromptsModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-4 w-[90%] max-w-lg max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-gray-900">System Prompts</h3>
+              <button
+                onClick={() => setIsPromptsModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
                   Profile Analysis Prompt
@@ -422,7 +528,6 @@ export default function Popup() {
                 />
               </div>
 
-              {/* Message Generation Prompt */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">
                   Message Generation Prompt
@@ -454,7 +559,7 @@ export default function Popup() {
                     onClick={handleSavePrompts}
                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg"
                   >
-                    Save Prompts
+                    Save
                   </button>
                 </div>
               </div>

@@ -498,13 +498,24 @@ let dragOffset = { x: 0, y: 0 };
 let profileData: ProfileData | null = null;
 let profileAnalysis: ProfileAnalysis | null = null;
 let lastUrl = location.href;
-let settingsState: { businessContext: string; vibe: string; relationship: string; customContext: string; widgetPosition: WidgetPosition; autoFetchProfile: boolean } = {
+let settingsState: {
+  businessContext: string;
+  vibe: string;
+  relationship: string;
+  customContext: string;
+  widgetPosition: WidgetPosition;
+  autoFetchProfile: boolean;
+  vibes: string[];
+  relationships: string[];
+} = {
   businessContext: '',
   vibe: 'professional',
   relationship: 'cold',
   customContext: '',
   widgetPosition: 'top-right',
   autoFetchProfile: true,
+  vibes: ['casual', 'professional', 'enthusiastic', 'friendly'],
+  relationships: ['cold', 'met-before', 'referral', 'mutual-connection'],
 };
 let isAnalyzing = false;
 let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -513,6 +524,13 @@ function injectStyles() {
   const styleElement = document.createElement('style');
   styleElement.textContent = styles;
   document.head.appendChild(styleElement);
+}
+
+function formatLabel(value: string): string {
+  return value
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }
 
 function isLinkedInProfileUrl(url: string): boolean {
@@ -572,13 +590,30 @@ function removeWidget() {
 
 async function loadSettingsFromStorage() {
   return new Promise<void>((resolve) => {
-    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship', 'widgetPosition', 'autoFetchProfile'], (result) => {
+    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship', 'widgetPosition', 'autoFetchProfile', 'messageOptions'], (result) => {
       const data = result as Partial<StorageData>;
       settingsState.businessContext = data.businessContext || '';
       settingsState.vibe = data.defaultVibe || 'professional';
       settingsState.relationship = data.defaultRelationship || 'cold';
       settingsState.widgetPosition = data.widgetPosition || 'top-right';
       settingsState.autoFetchProfile = data.autoFetchProfile !== false; // default true
+
+      // Load custom message options
+      if (data.messageOptions?.vibes?.length) {
+        settingsState.vibes = data.messageOptions.vibes;
+      }
+      if (data.messageOptions?.relationships?.length) {
+        settingsState.relationships = data.messageOptions.relationships;
+      }
+
+      // Ensure selected vibe/relationship is valid
+      if (!settingsState.vibes.includes(settingsState.vibe)) {
+        settingsState.vibe = settingsState.vibes[0] || 'professional';
+      }
+      if (!settingsState.relationships.includes(settingsState.relationship)) {
+        settingsState.relationship = settingsState.relationships[0] || 'cold';
+      }
+
       resolve();
     });
   });
@@ -682,20 +717,14 @@ async function createWidget() {
         <div class="relavo-chip-group">
           <label>Vibe</label>
           <div class="relavo-chips" id="relavo-vibe-chips">
-            <button class="relavo-chip ${settingsState.vibe === 'casual' ? 'selected' : ''}" data-vibe="casual">Casual</button>
-            <button class="relavo-chip ${settingsState.vibe === 'professional' ? 'selected' : ''}" data-vibe="professional">Professional</button>
-            <button class="relavo-chip ${settingsState.vibe === 'enthusiastic' ? 'selected' : ''}" data-vibe="enthusiastic">Enthusiastic</button>
-            <button class="relavo-chip ${settingsState.vibe === 'friendly' ? 'selected' : ''}" data-vibe="friendly">Friendly</button>
+            ${settingsState.vibes.map(vibe => `<button class="relavo-chip ${settingsState.vibe === vibe ? 'selected' : ''}" data-vibe="${vibe}">${formatLabel(vibe)}</button>`).join('')}
           </div>
         </div>
 
         <div class="relavo-chip-group">
           <label>Relationship</label>
           <div class="relavo-chips" id="relavo-relationship-chips">
-            <button class="relavo-chip ${settingsState.relationship === 'cold' ? 'selected' : ''}" data-rel="cold">Cold Outreach</button>
-            <button class="relavo-chip ${settingsState.relationship === 'met-before' ? 'selected' : ''}" data-rel="met-before">Met Before</button>
-            <button class="relavo-chip ${settingsState.relationship === 'referral' ? 'selected' : ''}" data-rel="referral">Referral</button>
-            <button class="relavo-chip ${settingsState.relationship === 'mutual-connection' ? 'selected' : ''}" data-rel="mutual-connection">Mutual Connection</button>
+            ${settingsState.relationships.map(rel => `<button class="relavo-chip ${settingsState.relationship === rel ? 'selected' : ''}" data-rel="${rel}">${formatLabel(rel)}</button>`).join('')}
           </div>
         </div>
 
