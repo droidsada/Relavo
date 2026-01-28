@@ -596,6 +596,9 @@ function removeWidget() {
     widget.remove();
     widget = null;
   }
+  profileData = null;
+  profileAnalysis = null;
+  isAnalyzing = false;
 }
 
 async function loadSettingsFromStorage() {
