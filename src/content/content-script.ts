@@ -502,20 +502,24 @@ let settingsState: {
   businessContext: string;
   vibe: string;
   relationship: string;
+  channel: string;
   customContext: string;
   widgetPosition: WidgetPosition;
   autoFetchProfile: boolean;
   vibes: string[];
   relationships: string[];
+  channels: string[];
 } = {
   businessContext: '',
   vibe: 'professional',
   relationship: 'cold',
+  channel: 'connect-note',
   customContext: '',
   widgetPosition: 'top-right',
   autoFetchProfile: true,
   vibes: ['casual', 'professional', 'enthusiastic', 'friendly'],
   relationships: ['cold', 'met-before', 'referral', 'mutual-connection'],
+  channels: ['connect-note', 'inmail', 'post-accept'],
 };
 let isAnalyzing = false;
 let isLoadingProfile = false;
@@ -603,11 +607,12 @@ function removeWidget() {
 
 async function loadSettingsFromStorage() {
   return new Promise<void>((resolve) => {
-    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship', 'widgetPosition', 'autoFetchProfile', 'messageOptions'], (result) => {
+    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship', 'defaultChannel', 'widgetPosition', 'autoFetchProfile', 'messageOptions'], (result) => {
       const data = result as Partial<StorageData>;
       settingsState.businessContext = data.businessContext || '';
       settingsState.vibe = data.defaultVibe || 'professional';
       settingsState.relationship = data.defaultRelationship || 'cold';
+      settingsState.channel = (data as Record<string, string>).defaultChannel || 'connect-note';
       settingsState.widgetPosition = data.widgetPosition || 'top-right';
       settingsState.autoFetchProfile = data.autoFetchProfile !== false; // default true
 
@@ -618,13 +623,19 @@ async function loadSettingsFromStorage() {
       if (data.messageOptions?.relationships?.length) {
         settingsState.relationships = data.messageOptions.relationships;
       }
+      if (data.messageOptions?.channels?.length) {
+        settingsState.channels = data.messageOptions.channels;
+      }
 
-      // Ensure selected vibe/relationship is valid
+      // Ensure selected vibe/relationship/channel is valid
       if (!settingsState.vibes.includes(settingsState.vibe)) {
         settingsState.vibe = settingsState.vibes[0] || 'professional';
       }
       if (!settingsState.relationships.includes(settingsState.relationship)) {
         settingsState.relationship = settingsState.relationships[0] || 'cold';
+      }
+      if (!settingsState.channels.includes(settingsState.channel)) {
+        settingsState.channel = settingsState.channels[0] || 'connect-note';
       }
 
       resolve();
@@ -670,6 +681,7 @@ function saveSettingsToStorage() {
       businessContext: settingsState.businessContext,
       defaultVibe: settingsState.vibe,
       defaultRelationship: settingsState.relationship,
+      defaultChannel: settingsState.channel,
     });
     showSettingsSaved();
   }, 500);
@@ -742,6 +754,13 @@ async function createWidget() {
         </div>
 
         <div class="relavo-chip-group">
+          <label>Channel</label>
+          <div class="relavo-chips" id="relavo-channel-chips">
+            ${settingsState.channels.map(ch => `<button class="relavo-chip ${settingsState.channel === ch ? 'selected' : ''}" data-channel="${ch}">${formatLabel(ch)}</button>`).join('')}
+          </div>
+        </div>
+
+        <div class="relavo-chip-group">
           <label>Custom Context (optional)</label>
           <textarea
             class="relavo-context-input"
@@ -789,6 +808,7 @@ function setupEventListeners() {
   const customContextInput = widget.querySelector('#relavo-custom-context') as HTMLTextAreaElement;
   const vibeChips = widget.querySelectorAll('#relavo-vibe-chips .relavo-chip');
   const relationshipChips = widget.querySelectorAll('#relavo-relationship-chips .relavo-chip');
+  const channelChips = widget.querySelectorAll('#relavo-channel-chips .relavo-chip');
 
   // Dragging
   header.addEventListener('mousedown', (e) => {
@@ -865,6 +885,16 @@ function setupEventListeners() {
     });
   });
 
+  // Channel chip selection
+  channelChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      channelChips.forEach((c) => c.classList.remove('selected'));
+      chip.classList.add('selected');
+      settingsState.channel = chip.getAttribute('data-channel') || 'connect-note';
+      saveSettingsToStorage();
+    });
+  });
+
   // Refresh
   refreshBtn.addEventListener('click', () => {
     profileAnalysis = null;
@@ -881,12 +911,13 @@ function setupEventListeners() {
   copyBtn.addEventListener('click', copyMessage);
 }
 
-function loadProfileData(retries = 2) {
+function loadProfileData(retries = 5) {
   profileData = extractProfileData();
 
-  // Retry if extraction failed and LinkedIn may still be loading
+  // Retry with increasing delay if extraction failed (LinkedIn may still be rendering)
   if (!profileData && retries > 0) {
-    setTimeout(() => loadProfileData(retries - 1), 500);
+    const delay = (6 - retries) * 500; // 500, 1000, 1500, 2000, 2500
+    setTimeout(() => loadProfileData(retries - 1), delay);
     return;
   }
 
@@ -1019,6 +1050,7 @@ async function generateMessage() {
       profileAnalysis,
       vibe: settingsState.vibe,
       relationship: settingsState.relationship,
+      channel: settingsState.channel,
       customContext: settingsState.customContext,
       businessContext: settingsState.businessContext,
     });
@@ -1063,7 +1095,25 @@ function extractProfileData(): ProfileData | null {
   try {
     const jsonLdData = extractFromJsonLd();
     if (jsonLdData) return jsonLdData;
-    return extractFromDom();
+
+    const domData = extractFromDom();
+    if (domData) return domData;
+
+    // Last resort: extract name from page title (e.g. "John Doe | LinkedIn")
+    if (isLinkedInProfileUrl(location.href)) {
+      const titleMatch = document.title.match(/^(.+?)\s*[\|–-]\s*LinkedIn/i);
+      if (titleMatch && titleMatch[1].trim().length > 1) {
+        return {
+          name: titleMatch[1].trim(),
+          headline: '',
+          about: '',
+          experience: [],
+          location: '',
+        };
+      }
+    }
+
+    return null;
   } catch (error) {
     console.error('Error extracting profile data:', error);
     return null;
@@ -1111,6 +1161,9 @@ function extractFromDom(): ProfileData | null {
     '.pv-top-card h1',
     'h1[data-generated-suggestion-target]',
     '.artdeco-entity-lockup__title',
+    '.pv-text-details__left-panel h1',
+    'section.artdeco-card h1',
+    'main h1',
   ]);
 
   if (!name) return null;
