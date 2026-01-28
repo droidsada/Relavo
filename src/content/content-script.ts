@@ -1127,7 +1127,24 @@ function extractFromDom(): ProfileData | null {
   const about = extractAboutSection();
   const experience = extractExperience();
 
-  return { name, headline: headline || '', about: about || '', experience, location: location || '' };
+  const certifications = extractCertifications();
+  const projects = extractProjects();
+  const recommendations = extractRecommendations();
+  const interests = extractInterests();
+  const activity = extractActivity();
+
+  return {
+    name,
+    headline: headline || '',
+    about: about || '',
+    experience,
+    location: location || '',
+    ...(certifications.length && { certifications }),
+    ...(projects.length && { projects }),
+    ...(recommendations.length && { recommendations }),
+    ...(interests.length && { interests }),
+    ...(activity.length && { activity }),
+  };
 }
 
 function extractText(selectors: string[]): string {
@@ -1178,6 +1195,94 @@ function extractExperience(): string[] {
     if (experience.length >= 5) break;
   }
   return experience;
+}
+
+function extractSectionItems(sectionId: string, limit: number): string[] {
+  const items: string[] = [];
+  const section = document.querySelector(sectionId)?.closest('section');
+  if (!section) return items;
+
+  const listItems = section.querySelectorAll('.artdeco-list__item, li.pvs-list__paged-list-item');
+  for (const item of listItems) {
+    const titleEl = item.querySelector('.t-bold span[aria-hidden="true"], .mr1.t-bold span');
+    const subtitleEl = item.querySelector('.t-14.t-normal span[aria-hidden="true"]');
+    const title = titleEl?.textContent?.trim();
+    const subtitle = subtitleEl?.textContent?.trim();
+    if (title) {
+      items.push(subtitle ? `${title} - ${subtitle}` : title);
+    }
+    if (items.length >= limit) break;
+  }
+  return items;
+}
+
+function extractCertifications(): string[] {
+  return extractSectionItems('#licenses_and_certifications', 5);
+}
+
+function extractProjects(): string[] {
+  const items: string[] = [];
+  const section = document.querySelector('#projects')?.closest('section');
+  if (!section) return items;
+
+  const listItems = section.querySelectorAll('.artdeco-list__item, li.pvs-list__paged-list-item');
+  for (const item of listItems) {
+    const titleEl = item.querySelector('.t-bold span[aria-hidden="true"], .mr1.t-bold span');
+    const descEl = item.querySelector('.pv-shared-text-with-see-more span[aria-hidden="true"]');
+    const title = titleEl?.textContent?.trim();
+    const desc = descEl?.textContent?.trim();
+    if (title) {
+      items.push(desc ? `${title}: ${desc.slice(0, 100)}` : title);
+    }
+    if (items.length >= 5) break;
+  }
+  return items;
+}
+
+function extractRecommendations(): string[] {
+  const items: string[] = [];
+  const section = document.querySelector('#recommendations')?.closest('section');
+  if (!section) return items;
+
+  const textBlocks = section.querySelectorAll('.pv-shared-text-with-see-more span[aria-hidden="true"]');
+  for (const block of textBlocks) {
+    const text = block.textContent?.trim();
+    if (text && text.length > 20) {
+      items.push(text.length > 200 ? text.slice(0, 200) + '...' : text);
+    }
+    if (items.length >= 3) break;
+  }
+  return items;
+}
+
+function extractInterests(): string[] {
+  const items: string[] = [];
+  const section = document.querySelector('#interests')?.closest('section');
+  if (!section) return items;
+
+  const nameEls = section.querySelectorAll('.t-bold span[aria-hidden="true"], .mr1.t-bold span');
+  for (const el of nameEls) {
+    const name = el.textContent?.trim();
+    if (name) items.push(name);
+    if (items.length >= 5) break;
+  }
+  return items;
+}
+
+function extractActivity(): string[] {
+  const items: string[] = [];
+  const section = document.querySelector('#activity')?.closest('section');
+  if (!section) return items;
+
+  const postEls = section.querySelectorAll('.pv-shared-text-with-see-more span[aria-hidden="true"], .break-words span[aria-hidden="true"]');
+  for (const el of postEls) {
+    const text = el.textContent?.trim();
+    if (text && text.length > 20) {
+      items.push(text.length > 200 ? text.slice(0, 200) + '...' : text);
+    }
+    if (items.length >= 3) break;
+  }
+  return items;
 }
 
 // Listen for messages from popup/background

@@ -27,6 +27,11 @@ export interface ProfileData {
   about: string;
   experience: string[];
   location: string;
+  certifications?: string[];
+  projects?: string[];
+  recommendations?: string[];
+  interests?: string[];
+  activity?: string[];
 }
 
 export interface ProfileAnalysis {
