@@ -18,6 +18,7 @@ export interface SystemPrompts {
 export interface MessageOptions {
   vibes: string[];
   relationships: string[];
+  channels: string[];
 }
 
 // Profile Data Types
@@ -60,6 +61,7 @@ export interface StorageData {
   businessContext: string;
   defaultVibe: string;
   defaultRelationship: string;
+  defaultChannel: string;
 }
 
 // Available Models by Provider
@@ -82,6 +84,7 @@ export const AVAILABLE_MODELS: Record<LLMProvider, Array<{ id: string; name: str
 export const DEFAULT_MESSAGE_OPTIONS: MessageOptions = {
   vibes: ['casual', 'professional', 'enthusiastic', 'friendly'],
   relationships: ['cold', 'met-before', 'referral', 'mutual-connection'],
+  channels: ['connect-note', 'inmail', 'post-accept'],
 };
 
 // Default System Prompts
@@ -156,6 +159,7 @@ export interface GenerateMessageRequest extends BaseMessage {
   profileAnalysis?: ProfileAnalysis;
   vibe: string;
   relationship: string;
+  channel: string;
   customContext: string;
   businessContext?: string;
 }

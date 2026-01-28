@@ -21,6 +21,7 @@ const DEFAULT_STORAGE: StorageData = {
   businessContext: '',
   defaultVibe: 'professional',
   defaultRelationship: 'cold',
+  defaultChannel: 'connect-note',
 };
 
 export async function getStorageData(): Promise<StorageData> {

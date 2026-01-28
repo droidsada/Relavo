@@ -180,9 +180,16 @@ Return a JSON object with "interests" (array of 3-5 short tags) and "alignmentSu
 // Message Generation Handler
 async function handleGenerateMessage(request: GenerateMessageRequest): Promise<GenerateMessageResponse> {
   const storedData = await getStorageData();
-  const { profileData, profileAnalysis, vibe, relationship, customContext, businessContext } = request;
+  const { profileData, profileAnalysis, vibe, relationship, channel, customContext, businessContext } = request;
 
   const contextToUse = businessContext || storedData.businessContext;
+
+  // Build channel context
+  const channelDescriptions: Record<string, string> = {
+    'connect-note': 'This is a LinkedIn connection request note. MUST be under 300 characters. Be concise and punchy.',
+    'inmail': 'This is a LinkedIn InMail message. Can be longer (3-5 sentences). More formal structure with clear value proposition.',
+    'post-accept': 'This is a follow-up message after they accepted our connection. Be warm, reference the connection, and suggest a next step.',
+  };
 
   // Build relationship context
   const relationshipDescriptions: Record<string, string> = {
@@ -208,6 +215,7 @@ ${profileAnalysis ? `
 **Message Parameters:**
 - Tone/Vibe: ${vibe}
 - Relationship: ${relationshipDescriptions[relationship] || relationship}
+- Channel: ${channelDescriptions[channel] || channel}
 ${contextToUse ? `- My Business Context: ${contextToUse}` : ''}
 ${customContext ? `- Additional Context: ${customContext}` : ''}
 

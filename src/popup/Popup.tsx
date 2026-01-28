@@ -37,6 +37,7 @@ export default function Popup() {
   const [editedMessageOptions, setEditedMessageOptions] = useState({
     vibes: '',
     relationships: '',
+    channels: '',
   });
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export default function Popup() {
       setEditedMessageOptions({
         vibes: data.messageOptions.vibes.join(', '),
         relationships: data.messageOptions.relationships.join(', '),
+        channels: data.messageOptions.channels.join(', '),
       });
 
       // Check if API key is configured - open modal if not
@@ -127,9 +129,10 @@ export default function Popup() {
   const handleSaveMessageOptions = async () => {
     const vibes = editedMessageOptions.vibes.split(',').map(s => s.trim()).filter(s => s.length > 0);
     const relationships = editedMessageOptions.relationships.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    const channels = editedMessageOptions.channels.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
     await setStorageData({
-      messageOptions: { vibes, relationships },
+      messageOptions: { vibes, relationships, channels },
     });
     const updated = await getStorageData();
     setStorageDataState(updated);
@@ -144,6 +147,7 @@ export default function Popup() {
     setEditedMessageOptions({
       vibes: DEFAULT_MESSAGE_OPTIONS.vibes.join(', '),
       relationships: DEFAULT_MESSAGE_OPTIONS.relationships.join(', '),
+      channels: DEFAULT_MESSAGE_OPTIONS.channels.join(', '),
     });
     showSaved();
   };
@@ -471,6 +475,20 @@ export default function Popup() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="text-xs text-gray-500 mt-1">Relationship types for context</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Channels (comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={editedMessageOptions.channels}
+                  onChange={(e) => setEditedMessageOptions({ ...editedMessageOptions, channels: e.target.value })}
+                  placeholder="connect-note, inmail, post-accept"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Message channel types (connect note, InMail, post-accept)</p>
               </div>
 
               <div className="flex items-center justify-between pt-2">
