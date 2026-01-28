@@ -582,10 +582,12 @@ function handleUrlChange() {
     clearGeneratedMessage();
     updateProfileDisplay(); // Show loading state immediately
 
-    // Wait for LinkedIn to load new profile content before extracting
-    setTimeout(() => {
-      loadProfileData();
-    }, 800);
+    // Reload settings then wait for LinkedIn to render new profile content
+    loadSettingsFromStorage().then(() => {
+      setTimeout(() => {
+        loadProfileData();
+      }, 800);
+    });
   }
 }
 
@@ -876,8 +878,15 @@ function setupEventListeners() {
   copyBtn.addEventListener('click', copyMessage);
 }
 
-function loadProfileData() {
+function loadProfileData(retries = 2) {
   profileData = extractProfileData();
+
+  // Retry if extraction failed and LinkedIn may still be loading
+  if (!profileData && retries > 0) {
+    setTimeout(() => loadProfileData(retries - 1), 500);
+    return;
+  }
+
   isLoadingProfile = false;
   updateProfileDisplay();
 
