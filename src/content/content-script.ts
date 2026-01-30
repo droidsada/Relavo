@@ -20,7 +20,6 @@ const styles = `
     z-index: 9999;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow: hidden;
-    resize: both;
   }
 
   #relavo-widget * {
@@ -74,6 +73,64 @@ const styles = `
     overflow-y: auto;
   }
 
+  /* Collapsible Section Styles */
+  .relavo-collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .relavo-collapsible-header:hover {
+    opacity: 0.8;
+  }
+
+  .relavo-collapse-toggle {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px;
+    transition: transform 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .relavo-collapse-toggle.collapsed {
+    transform: rotate(-90deg);
+  }
+
+  .relavo-collapsible-content {
+    overflow: hidden;
+    transition: max-height 0.2s ease-out, opacity 0.2s ease-out;
+    max-height: 1000px;
+    opacity: 1;
+  }
+
+  .relavo-collapsible-content.collapsed {
+    max-height: 0;
+    opacity: 0;
+  }
+
+  /* Resize Handle */
+  .relavo-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    background: linear-gradient(135deg, transparent 50%, #cbd5e1 50%);
+    border-radius: 0 0 12px 0;
+  }
+
+  .relavo-resize-handle:hover {
+    background: linear-gradient(135deg, transparent 50%, #94a3b8 50%);
+  }
+
   #relavo-profile-section {
     background: white;
     border-radius: 8px;
@@ -86,10 +143,18 @@ const styles = `
     font-size: 14px;
     font-weight: 600;
     color: #1e293b;
-    margin: 0 0 10px 0;
+    margin: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  #relavo-profile-section .relavo-collapsible-content {
+    margin-top: 10px;
+  }
+
+  #relavo-profile-section .relavo-collapsible-content.collapsed {
+    margin-top: 0;
   }
 
   #relavo-profile-section .profile-name button {
@@ -192,9 +257,17 @@ const styles = `
   }
 
   .relavo-chip-section h4 {
-    margin: 0 0 12px 0;
+    margin: 0;
     font-size: 13px;
     color: #1e293b;
+  }
+
+  .relavo-chip-section .relavo-collapsible-content {
+    margin-top: 12px;
+  }
+
+  .relavo-chip-section .relavo-collapsible-content.collapsed {
+    margin-top: 0;
   }
 
   .relavo-chip-group {
@@ -494,7 +567,9 @@ const styles = `
 
 let widget: HTMLElement | null = null;
 let isDragging = false;
+let isResizing = false;
 let dragOffset = { x: 0, y: 0 };
+let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
 let profileData: ProfileData | null = null;
 let profileAnalysis: ProfileAnalysis | null = null;
 let lastUrl = location.href;
@@ -729,45 +804,54 @@ async function createWidget() {
       </div>
 
       <div id="relavo-profile-section">
-        <div class="profile-name">
-          <span id="relavo-profile-name">Loading...</span>
-          <button id="relavo-analyze-btn" title="Analyze profile">&#8635;</button>
+        <div class="relavo-collapsible-header" data-section="profile">
+          <div class="profile-name">
+            <span id="relavo-profile-name">Loading...</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <button id="relavo-analyze-btn" title="Analyze profile">&#8635;</button>
+            <span class="relavo-collapse-toggle" data-section="profile">&#9660;</span>
+          </div>
         </div>
-        <div id="relavo-analysis-content"></div>
+        <div id="relavo-analysis-content" class="relavo-collapsible-content" data-section="profile"></div>
       </div>
 
       <div class="relavo-chip-section">
-        <h4>Message Options</h4>
-
-        <div class="relavo-chip-group">
-          <label>Vibe</label>
-          <div class="relavo-chips" id="relavo-vibe-chips">
-            ${settingsState.vibes.map(vibe => `<button class="relavo-chip ${settingsState.vibe === vibe ? 'selected' : ''}" data-vibe="${vibe}">${formatLabel(vibe)}</button>`).join('')}
-          </div>
+        <div class="relavo-collapsible-header" data-section="options">
+          <h4>Message Options</h4>
+          <span class="relavo-collapse-toggle" data-section="options">&#9660;</span>
         </div>
-
-        <div class="relavo-chip-group">
-          <label>Relationship</label>
-          <div class="relavo-chips" id="relavo-relationship-chips">
-            ${settingsState.relationships.map(rel => `<button class="relavo-chip ${settingsState.relationship === rel ? 'selected' : ''}" data-rel="${rel}">${formatLabel(rel)}</button>`).join('')}
+        <div class="relavo-collapsible-content" data-section="options">
+          <div class="relavo-chip-group">
+            <label>Vibe</label>
+            <div class="relavo-chips" id="relavo-vibe-chips">
+              ${settingsState.vibes.map(vibe => `<button class="relavo-chip ${settingsState.vibe === vibe ? 'selected' : ''}" data-vibe="${vibe}">${formatLabel(vibe)}</button>`).join('')}
+            </div>
           </div>
-        </div>
 
-        <div class="relavo-chip-group">
-          <label>Channel</label>
-          <div class="relavo-chips" id="relavo-channel-chips">
-            ${settingsState.channels.map(ch => `<button class="relavo-chip ${settingsState.channel === ch ? 'selected' : ''}" data-channel="${ch}">${formatLabel(ch)}</button>`).join('')}
+          <div class="relavo-chip-group">
+            <label>Relationship</label>
+            <div class="relavo-chips" id="relavo-relationship-chips">
+              ${settingsState.relationships.map(rel => `<button class="relavo-chip ${settingsState.relationship === rel ? 'selected' : ''}" data-rel="${rel}">${formatLabel(rel)}</button>`).join('')}
+            </div>
           </div>
-        </div>
 
-        <div class="relavo-chip-group">
-          <label>Custom Context (optional)</label>
-          <textarea
-            class="relavo-context-input"
-            id="relavo-custom-context"
-            placeholder="Add specific details about why you're reaching out..."
-            rows="2"
-          ></textarea>
+          <div class="relavo-chip-group">
+            <label>Channel</label>
+            <div class="relavo-chips" id="relavo-channel-chips">
+              ${settingsState.channels.map(ch => `<button class="relavo-chip ${settingsState.channel === ch ? 'selected' : ''}" data-channel="${ch}">${formatLabel(ch)}</button>`).join('')}
+            </div>
+          </div>
+
+          <div class="relavo-chip-group">
+            <label>Custom Context (optional)</label>
+            <textarea
+              class="relavo-context-input"
+              id="relavo-custom-context"
+              placeholder="Add specific details about why you're reaching out..."
+              rows="2"
+            ></textarea>
+          </div>
         </div>
       </div>
 
@@ -784,6 +868,7 @@ async function createWidget() {
         <div id="relavo-tip">Tip: Review and personalize before sending!</div>
       </div>
     </div>
+    <div class="relavo-resize-handle" id="relavo-resize-handle"></div>
   `;
 
   document.body.appendChild(widget);
@@ -809,6 +894,8 @@ function setupEventListeners() {
   const vibeChips = widget.querySelectorAll('#relavo-vibe-chips .relavo-chip');
   const relationshipChips = widget.querySelectorAll('#relavo-relationship-chips .relavo-chip');
   const channelChips = widget.querySelectorAll('#relavo-channel-chips .relavo-chip');
+  const resizeHandle = widget.querySelector('#relavo-resize-handle') as HTMLElement;
+  const collapsibleHeaders = widget.querySelectorAll('.relavo-collapsible-header');
 
   // Dragging
   header.addEventListener('mousedown', (e) => {
@@ -822,18 +909,65 @@ function setupEventListeners() {
     widget!.style.transition = 'none';
   });
 
+  // Resize handle
+  resizeHandle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    isResizing = true;
+    const rect = widget!.getBoundingClientRect();
+    resizeStart = {
+      x: e.clientX,
+      y: e.clientY,
+      width: rect.width,
+      height: rect.height,
+    };
+    widget!.style.transition = 'none';
+  });
+
   document.addEventListener('mousemove', (e) => {
-    if (!isDragging || !widget) return;
-    const x = e.clientX - dragOffset.x;
-    const y = e.clientY - dragOffset.y;
-    widget.style.left = `${Math.max(0, Math.min(x, window.innerWidth - widget.offsetWidth))}px`;
-    widget.style.top = `${Math.max(0, Math.min(y, window.innerHeight - widget.offsetHeight))}px`;
-    widget.style.right = 'auto';
+    if (!widget) return;
+
+    if (isResizing) {
+      const newWidth = resizeStart.width + (e.clientX - resizeStart.x);
+      const newHeight = resizeStart.height + (e.clientY - resizeStart.y);
+      widget.style.width = `${Math.max(320, newWidth)}px`;
+      widget.style.height = `${Math.max(200, newHeight)}px`;
+      return;
+    }
+
+    if (isDragging) {
+      const x = e.clientX - dragOffset.x;
+      const y = e.clientY - dragOffset.y;
+      widget.style.left = `${Math.max(0, Math.min(x, window.innerWidth - widget.offsetWidth))}px`;
+      widget.style.top = `${Math.max(0, Math.min(y, window.innerHeight - widget.offsetHeight))}px`;
+      widget.style.right = 'auto';
+    }
   });
 
   document.addEventListener('mouseup', () => {
     isDragging = false;
+    isResizing = false;
     if (widget) widget.style.transition = '';
+  });
+
+  // Collapsible sections
+  collapsibleHeaders.forEach((header) => {
+    header.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      // Don't collapse if clicking the analyze button
+      if (target.id === 'relavo-analyze-btn' || target.closest('#relavo-analyze-btn')) return;
+
+      const section = header.getAttribute('data-section');
+      if (!section) return;
+
+      const content = widget?.querySelector(`.relavo-collapsible-content[data-section="${section}"]`);
+      const toggle = header.querySelector('.relavo-collapse-toggle');
+
+      if (content && toggle) {
+        content.classList.toggle('collapsed');
+        toggle.classList.toggle('collapsed');
+      }
+    });
   });
 
   // Close
