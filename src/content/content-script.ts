@@ -584,6 +584,8 @@ let settingsState: {
   vibes: string[];
   relationships: string[];
   channels: string[];
+  widgetWidth: number | null;
+  widgetHeight: number | null;
 } = {
   businessContext: '',
   vibe: 'professional',
@@ -595,6 +597,8 @@ let settingsState: {
   vibes: ['casual', 'professional', 'enthusiastic', 'friendly'],
   relationships: ['cold', 'met-before', 'referral', 'mutual-connection'],
   channels: ['connect-note', 'inmail', 'post-accept'],
+  widgetWidth: null,
+  widgetHeight: null,
 };
 let isAnalyzing = false;
 let isLoadingProfile = false;
@@ -682,14 +686,16 @@ function removeWidget() {
 
 async function loadSettingsFromStorage() {
   return new Promise<void>((resolve) => {
-    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship', 'defaultChannel', 'widgetPosition', 'autoFetchProfile', 'messageOptions'], (result) => {
-      const data = result as Partial<StorageData>;
+    chrome.storage.sync.get(['businessContext', 'defaultVibe', 'defaultRelationship', 'defaultChannel', 'widgetPosition', 'autoFetchProfile', 'messageOptions', 'widgetWidth', 'widgetHeight'], (result) => {
+      const data = result as Partial<StorageData> & { widgetWidth?: number; widgetHeight?: number };
       settingsState.businessContext = data.businessContext || '';
       settingsState.vibe = data.defaultVibe || 'professional';
       settingsState.relationship = data.defaultRelationship || 'cold';
       settingsState.channel = (data as Record<string, string>).defaultChannel || 'connect-note';
       settingsState.widgetPosition = data.widgetPosition || 'top-right';
       settingsState.autoFetchProfile = data.autoFetchProfile !== false; // default true
+      settingsState.widgetWidth = data.widgetWidth || null;
+      settingsState.widgetHeight = data.widgetHeight || null;
 
       // Load custom message options
       if (data.messageOptions?.vibes?.length) {
@@ -770,6 +776,17 @@ function showSettingsSaved() {
       savedIndicator.classList.remove('visible');
     }, 1500);
   }
+}
+
+function saveWidgetSize() {
+  if (!widget) return;
+  const rect = widget.getBoundingClientRect();
+  settingsState.widgetWidth = rect.width;
+  settingsState.widgetHeight = rect.height;
+  chrome.storage.sync.set({
+    widgetWidth: rect.width,
+    widgetHeight: rect.height,
+  });
 }
 
 async function createWidget() {
@@ -873,6 +890,15 @@ async function createWidget() {
 
   document.body.appendChild(widget);
   applyWidgetPosition(widget, settingsState.widgetPosition);
+
+  // Apply saved widget dimensions
+  if (settingsState.widgetWidth) {
+    widget.style.width = `${settingsState.widgetWidth}px`;
+  }
+  if (settingsState.widgetHeight) {
+    widget.style.height = `${settingsState.widgetHeight}px`;
+  }
+
   setupEventListeners();
   loadProfileData();
 }
@@ -945,6 +971,9 @@ function setupEventListeners() {
   });
 
   document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      saveWidgetSize();
+    }
     isDragging = false;
     isResizing = false;
     if (widget) widget.style.transition = '';
